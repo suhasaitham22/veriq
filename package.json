@@ -1,0 +1,1 @@
+{"description":"Verify anything — claim verification with real sources.","license":"MIT","name":"veriq","private":true,"scripts":{"dev:api":"wrangler dev --cwd apps/api","dev:web":"wrangler pages dev apps/web"},"version":"0.1.0","workspaces":["apps/*","extensions/*"]}
