@@ -1,0 +1,26 @@
+name = "veriq-api"
+main = "src/index.ts"
+compatibility_date = "2026-09-01"
+
+[vars]
+API_BASE_URL = "https://veriq-api.workers.dev"
+
+# --- bindings (create with wrangler) ---
+# d1:      npx wrangler d1 create veriq-db
+# kv:      npx wrangler kv namespace create VERDICT_CACHE
+# r2:      npx wrangler r2 bucket create veriq-snapshots
+[[d1_databases]]
+binding = "DB"
+database_name = "veriq-db"
+database_id = "replace-me"
+
+[[kv_namespaces]]
+binding = "CACHE"
+id = "replace-me"
+
+[[r2_buckets]]
+binding = "SNAPSHOTS"
+bucket_name = "veriq-snapshots"
+
+[ai]
+binding = "AI"
