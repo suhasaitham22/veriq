@@ -5,22 +5,21 @@ compatibility_date = "2026-09-01"
 [vars]
 API_BASE_URL = "https://veriq-api.workers.dev"
 
-# --- bindings (create with wrangler) ---
-# d1:      npx wrangler d1 create veriq-db
-# kv:      npx wrangler kv namespace create VERDICT_CACHE
-# r2:      npx wrangler r2 bucket create veriq-snapshots
+# --- bindings (provisioned 2026-10-02) ---
 [[d1_databases]]
 binding = "DB"
 database_name = "veriq-db"
-database_id = "replace-me"
+database_id = "180710a2-bbc6-41cc-9203-7df4c3852cb0"
 
 [[kv_namespaces]]
 binding = "CACHE"
-id = "replace-me"
+id = "2be846dc543641cb93e12c4772c3f172"
 
-[[r2_buckets]]
-binding = "SNAPSHOTS"
-bucket_name = "veriq-snapshots"
+# R2 snapshots deferred until R2 is activated on the account
+# (requires a payment method on file; free tier is $0 base).
+# [[r2_buckets]]
+# binding = "SNAPSHOTS"
+# bucket_name = "veriq-snapshots"
 
 [ai]
 binding = "AI"
