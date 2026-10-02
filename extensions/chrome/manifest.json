@@ -1,0 +1,1 @@
+{"action":{"default_popup":"../shared/popup.html"},"content_scripts":[{"js":["../shared/content.js"],"matches":["<all_urls>"],"run_at":"document_idle"}],"description":"Verify any claim on any page — with real sources.","host_permissions":["<all_urls>"],"manifest_version":3,"name":"Veriq","permissions":["activeTab","scripting","storage"],"version":"0.1.0"}
