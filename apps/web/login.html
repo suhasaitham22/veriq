@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Log in — Veriq</title>
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body class="page">
+<nav class="nav"><div class="nav-inner">
+  <a class="logo" href="/">Veriq<span class="q">?</span></a>
+  <div class="nav-links"><a href="/">← Back to home</a></div>
+</div></nav>
+
+<main class="center">
+  <div class="form-card">
+    <h1 id="title">Welcome back</h1>
+    <p class="muted" id="subtitle">Log in to verify anything.</p>
+    <form id="form">
+      <div class="field"><label for="email">Email</label><input id="email" type="email" autocomplete="email" required></div>
+      <div class="field"><label for="password">Password</label><input id="password" type="password" autocomplete="current-password" minlength="8" required></div>
+      <div class="form-err" id="err"></div>
+      <button class="btn" id="submit" style="width:100%">Log in</button>
+    </form>
+    <p class="form-switch" id="switch">New to Veriq? <a href="/login.html?mode=signup">Create an account</a></p>
+  </div>
+</main>
+
+<script src="js/auth.js"></script>
+</body>
+</html>
