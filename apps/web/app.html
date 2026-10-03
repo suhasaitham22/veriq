@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dashboard — Veriq</title>
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body class="page">
+<nav class="nav"><div class="nav-inner">
+  <a class="logo" href="/">Veriq<span class="q">?</span></a>
+  <div class="nav-links">
+    <span class="user-chip"><span id="who"></span><button id="logout">Log out</button></span>
+  </div>
+</div></nav>
+
+<main class="dash">
+  <div class="dash-head">
+    <h1>Verify anything</h1>
+  </div>
+
+  <div id="shared-view"></div>
+
+  <div id="verify-view">
+    <textarea class="verify-box" id="input" placeholder="Paste text to verify — an article excerpt, a claim you saw online, anything factual…"></textarea>
+    <button class="btn" id="go">Verify</button>
+    <div id="status"></div>
+    <div id="results"></div>
+  </div>
+
+  <div class="hist">
+    <h2>Recent verifications</h2>
+    <div id="history"></div>
+  </div>
+</main>
+
+<script src="app.js"></script>
+</body>
+</html>
