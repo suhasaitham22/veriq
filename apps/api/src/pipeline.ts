@@ -27,11 +27,13 @@ interface RawResult { url: string; title: string; snippet: string }
 /* ---------- 1. split: text → atomic, checkable claims ---------- */
 
 export async function splitClaims(text: string, ctx: Ctx): Promise<Claim[]> {
+  //
   const res = await ctx.ai.run("@cf/openai/gpt-oss-20b", {
     messages: [
       { role: "system", content: `Split the user's text into atomic factual claims. Each claim is ONE single verifiable fact. Break compound sentences apart.
 Example — Input: "Paris is the capital of France and has about 2 million residents."
 Output: {"claims": [{"text": "Paris is the capital of France.", "checkable": true, "topic": "Paris"}, {"text": "Paris has about 2 million residents.", "checkable": true, "topic": "Paris population"}]}
+CRITICAL: Split on "and" whenever it joins two separate facts. "X was completed in 1889 and is 330 meters tall" MUST become two claims: "X was completed in 1889." and "X is 330 meters tall." Never leave "and" joining two verifiable facts in one claim.
 For each claim, include a "topic": the 1-3 word Wikipedia-style article title to search for (e.g. "Honey", "Moon landing", "Albert Einstein").
 Mark opinions, predictions, and vague unmeasurable statements as checkable=false with a skipReason.
 Absolute statements like "X never happens" ARE checkable — verify them, don't skip them.
@@ -39,10 +41,10 @@ Reply with ONLY the JSON object.` },
       { role: "user", content: text.slice(0, 4000) },
     ],
     response_format: { type: "json_object" },
-  }) as { response: string };
+  }) as any;
   let list: any[] = [];
   try {
-    const parsed = JSON.parse(res.response);
+    const parsed = JSON.parse(String(res.response ?? res.choices?.[0]?.message?.content ?? "").trim()); // Handle both {response} and OpenAI-style {choices[0].message.content} formats.
     list = Array.isArray(parsed) ? parsed : parsed.claims ?? [];
   } catch { /* fall through to deterministic coverage below */ }
   const llmClaims: Claim[] = list.map((c: any, i: number) => ({
@@ -50,14 +52,31 @@ Reply with ONLY the JSON object.` },
     checkable: !!c.checkable, skipReason: c.skipReason,
     topic: String(c.topic || "").slice(0, 40),
   })).filter((c) => c.checkable);
+  // Safety net: deterministically split any compound claim the LLM left joined by " and ".
+  const split: Claim[] = [];
+  for (const c of llmClaims) {
+    const parts = c.text.split(/\s+and\s+(?=(?:is|are|was|were|has|have|had|stands?|measures?|contains?|includes?|features?|reaches?|spans?|covers?|extends?|runs?|goes?|lies?|became|opened|freezes?|boils?|melts?|weighs?|costs?|lasts?|takes?|[A-Z]))/i);
+    if (parts.length > 1 && parts.every((p) => p.trim().length > 15)) {
+      const subject = c.text.split(/\s+/).slice(0, 3).join(" ");
+      parts.forEach((p, j) => {
+        let t = p.trim();
+        if (j > 0 && /^[a-z]/.test(t) && !/^(the|a|an|it|they|he|she)\b/i.test(t)) {
+          t = `${subject} ${t}`;
+        }
+        split.push({ id: `${c.id}s${j}`, text: t.replace(/\.*$/, ".").slice(0, 300), checkable: true, topic: c.topic });
+      });
+    } else {
+      split.push(c);
+    }
+  }
 
   // Deterministic coverage: every input sentence must be represented as a claim.
   // The LLM refines; this guarantees nothing is silently dropped.
   const sentences = text.split(/(?<=[.!?])\s+/).map((s) => s.trim()).filter((s) => s.length > 15);
-  const covered = (s: string) => llmClaims.some((c) => overlap(s, c.text) > 0.5);
+  const covered = (s: string) => split.some((c) => overlap(s, c.text) > 0.5);
   const extra: Claim[] = sentences.filter((s) => !covered(s))
     .map((s, i) => ({ id: `d${i}`, text: s.slice(0, 300), checkable: true, topic: searchPhrase(s) }));
-  return [...llmClaims, ...extra];
+  return [...split, ...extra];
 }
 
 /* ---------- 2. search: support queries + disproof queries ---------- */
