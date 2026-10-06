@@ -1,7 +1,7 @@
 /**
  * index.ts — Veriq API.
  *
- * Public:  GET  /api/health, GET /api/r/:id (shareable receipt)
+ * Public:  GET  /api/health, GET /api/r/:id (shareable receipt), POST /api/slack/command
  * Auth:    POST /api/auth/signup, /api/auth/login, /api/auth/logout, GET /api/auth/me
  * Private: POST /api/verify, GET /api/verify/history
  *
@@ -20,9 +20,14 @@ interface Env {
   SEARCH_API_KEY?: string;
   TAVILY_API_KEY?: string;
   WEB_ORIGIN?: string;
+  BOT_API_KEY?: string;
+  SLACK_SIGNING_SECRET?: string;
+    DISCORD_PUBLIC_KEY?: string;
+    DISCORD_APP_ID?: string;
 }
 
 const VERIFY_DAILY_CAP = 50;
+const BOT_DAILY_CAP = 1000;
 
 function cors(req: Request, env: Env): Record<string, string> {
   const origin = req.headers.get("origin") ?? "";
@@ -42,17 +47,15 @@ function json(data: unknown, status = 200, headers: Record<string, string> = {})
   });
 }
 
-/** Simple fixed-window rate limit in D1. Returns true if allowed. */
-async function rateLimit(db: D1Database, key: string, limit: number, windowSec: number): Promise<boolean> {
+/** Simple fixed-window rate limit in KV. Returns true if allowed. */
+async function rateLimit(kv: KVNamespace, key: string, limit: number, windowSec: number): Promise<boolean> {
   const now = Math.floor(Date.now() / 1000);
   const windowStart = now - (now % windowSec);
-  const k = `${key}:${windowStart}`;
-  const row = await db.prepare("SELECT count FROM usage WHERE ip = ? AND day = ?").bind(k, "rl").first<{ count: number }>();
-  const used = row?.count ?? 0;
+  const k = `rl:${key}:${windowStart}`;
+  const raw = await kv.get(k);
+  const used = raw ? parseInt(raw, 10) || 0 : 0;
   if (used >= limit) return false;
-  await db.prepare(
-    "INSERT INTO usage (ip, day, count) VALUES (?, 'rl', 1) ON CONFLICT (ip, day) DO UPDATE SET count = count + 1"
-  ).bind(k).run();
+  await kv.put(k, String(used + 1), { expirationTtl: windowSec + 5 });
   return true;
 }
 
@@ -74,7 +77,7 @@ function hashStr(text: string): string {
 }
 
 export default {
-  async fetch(req: Request, env: Env): Promise<Response> {
+  async fetch(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(req.url);
     const headers = cors(req, env);
     if (req.method === "OPTIONS") return new Response(null, { headers });
@@ -85,7 +88,7 @@ export default {
     }
 
     if (url.pathname === "/api/auth/signup" && req.method === "POST") {
-      if (!(await rateLimit(env.DB, `auth:${ip}`, 10, 60))) return json({ error: "too many attempts" }, 429, headers);
+      if (!(await rateLimit(env.CACHE, `auth:${ip}`, 10, 60))) return json({ error: "too many attempts" }, 429, headers);
       const { email, password } = await req.json() as { email?: string; password?: string };
       if (!email || !isValidEmail(email)) return json({ error: "invalid email" }, 400, headers);
       if (!password || !isValidPassword(password)) return json({ error: "password must be 8–128 characters" }, 400, headers);
@@ -101,7 +104,7 @@ export default {
     }
 
     if (url.pathname === "/api/auth/login" && req.method === "POST") {
-      if (!(await rateLimit(env.DB, `auth:${ip}`, 10, 60))) return json({ error: "too many attempts" }, 429, headers);
+      if (!(await rateLimit(env.CACHE, `auth:${ip}`, 10, 60))) return json({ error: "too many attempts" }, 429, headers);
       const { email, password } = await req.json() as { email?: string; password?: string };
       if (!email || !password) return json({ error: "email and password required" }, 400, headers);
       const row = await env.DB.prepare("SELECT id, email, password_hash, salt FROM users WHERE email = ?")
