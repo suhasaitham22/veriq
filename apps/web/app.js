@@ -9,6 +9,9 @@ const labels = {
   requires_changes: "Changes required",
   needs_review: "Needs human review",
 };
+let scenarios = [],
+  feedbackReviewId = null,
+  sampleDocumentIds = [];
 let user,
   workspace,
   workspaces = [],
@@ -53,6 +56,10 @@ async function api(path, body, key) {
     location.href = "/login.html";
     throw new Error("Your session ended. Sign in again.");
   }
+  if (!res.headers.get("content-type")?.includes("application/json"))
+    throw new Error(
+      "The review API did not return JSON. Check the Pages proxy and deploy the API and web app together.",
+    );
   const data = await res.json();
   if (!res.ok)
     throw new Error(
@@ -61,8 +68,13 @@ async function api(path, body, key) {
   return data;
 }
 function controls() {
-  $("workspace-select").disabled = busy;
-  $("new-workspace").disabled = busy;
+  $("workspace-select").disabled = busy || !workspace;
+  $("give-feedback").disabled = busy || !workspace;
+  $("feedback-fields").disabled = busy;
+  $("setup-demo").disabled = busy || !workspace?.is_personal;
+  $("demo-scenario").disabled = busy || !sampleDocumentIds.length || !writer();
+  $("load-scenario").disabled = busy || !sampleDocumentIds.length || !writer();
+  $("new-workspace").disabled = busy || !user;
   $("document-fields").disabled = busy || !writer();
   $("member-fields").disabled = busy || !admin() || !!workspace?.is_personal;
   $("input").disabled = busy || !writer();
@@ -79,7 +91,7 @@ function controls() {
     .forEach((n) => (n.disabled = busy || !writer()));
   document
     .querySelectorAll(
-      '#workspace-nav [data-view="team"],#workspace-nav [data-view="audit"]',
+      '#workspace-nav [data-view="team"],#workspace-nav [data-view="audit"],#workspace-nav [data-view="feedback"]',
     )
     .forEach((n) => (n.hidden = !admin()));
 }
@@ -116,13 +128,17 @@ const views = {
     "Team & access",
     "Control who can view, review and approve in this workspace.",
   ],
+  feedback: [
+    "Pilot feedback",
+    "Learn what your pilot team finds useful and what needs to improve.",
+  ],
   audit: [
     "Audit trail",
     "Trace policy approvals, access changes and review decisions.",
   ],
 };
 function view(name, refresh = true) {
-  if (["team", "audit"].includes(name) && !admin()) name = "review";
+  if (["team", "audit", "feedback"].includes(name) && !admin()) name = "review";
   for (const key of Object.keys(views)) $(`view-${key}`).hidden = key !== name;
   document
     .querySelectorAll("#workspace-nav button")
@@ -142,6 +158,8 @@ function view(name, refresh = true) {
   }
   if (name === "team")
     loadMembers().catch((e) => msg("team-status", e.message, true));
+  if (name === "feedback")
+    loadFeedback().catch((e) => msg("global-status", e.message, true));
   if (name === "audit")
     loadAudit().catch((e) => msg("global-status", e.message, true));
 }
@@ -202,6 +220,8 @@ async function loadWorkspaces(preferred) {
 }
 async function switchWorkspace(id) {
   epoch++;
+  sampleDocumentIds = [];
+  $("demo-status").textContent = "";
   workspace = workspaces.find((w) => w.id === id) || workspaces[0];
   selected.clear();
   pages.clear();
@@ -230,6 +250,10 @@ async function switchWorkspace(id) {
     $(id).replaceChildren();
   history.replaceState(null, "", location.pathname);
   $("workspace-select").value = workspace.id;
+  $("demo-panel").hidden = !workspace.is_personal;
+  $("demo-help").textContent = workspace.is_personal
+    ? "Setup explicitly approves a fictional sample policy in your personal workspace. Real company policies belong in a team workspace."
+    : "Switch to your personal workspace for a sample demo. Company policies require approval by a different administrator.";
   $("workspace-name").textContent = workspace.name;
   $("role-chip").textContent = workspace.role;
   $("approval-mode").textContent = workspace.require_two_person
@@ -277,6 +301,9 @@ async function paginate(id, path, key, renderer, append = false) {
   for (const item of data[key]) $(id).append(renderer(item));
   if (!$(id).children.length)
     $(id).append(el("p", "No matching records yet.", "empty-state"));
+  if (id === "feedback")
+    $("feedback-summary").textContent =
+      `${data.summary.count} notes · average usefulness ${data.summary.averageRating ?? "—"}/5`;
   state.cursor = data.nextCursor;
   $(`more-${id}`).hidden = !state.cursor;
   controls();
@@ -790,6 +817,7 @@ for (const [id, loader] of [
   ["documents", loadDocuments],
   ["history", loadHistory],
   ["audit-events", loadAudit],
+  ["feedback", loadFeedback],
 ])
   $(`more-${id}`).onclick = () =>
     loader(true).catch((e) => msg("global-status", e.message, true));
@@ -833,6 +861,104 @@ $("workspace-form").onsubmit = (e) => {
     $("workspace-form").reset();
   });
 };
+
+$("setup-demo").onclick = () =>
+  mutate("demo-status", async () => {
+    const data = await api("/api/demo/setup", { confirmSamplePolicies: true });
+    sampleDocumentIds = data.documentIds;
+    selected = new Set(data.documentIds);
+    invalidate(
+      "Fictional sample policy selected. Choose a scenario, then run the review.",
+    );
+    counts();
+    await Promise.all([loadSources(), loadDocuments(), overview()]);
+    msg(
+      "demo-status",
+      "Sample policy ready. These examples use the actual review engine.",
+    );
+  });
+$("load-scenario").onclick = () => {
+  const scenario = scenarios.find((s) => s.id === $("demo-scenario").value);
+  if (!scenario) return;
+  $("input").value = scenario.draft;
+  selected = new Set(sampleDocumentIds);
+  invalidate(`Sample scenario: ${scenario.expectation}`);
+  counts();
+  loadSources().catch((e) => msg("demo-status", e.message, true));
+};
+$("give-feedback").onclick = () => {
+  feedbackReviewId = current?.id ?? null;
+  $("feedback-form").reset();
+  msg("feedback-status", "");
+  $("feedback-context").textContent =
+    `${workspace.name} · ${feedbackReviewId ? "Linked to the review currently shown." : "General workspace feedback."}`;
+  $("feedback-dialog").showModal();
+};
+$("close-feedback").onclick = () => $("feedback-dialog").close();
+$("feedback-form").onsubmit = (e) => {
+  e.preventDefault();
+  mutate("feedback-status", async () => {
+    await api("/api/feedback", {
+      rating: Number($("feedback-rating").value),
+      kind: $("feedback-kind").value,
+      note: $("feedback-note").value,
+      reviewId: feedbackReviewId,
+    });
+    $("feedback-dialog").close();
+    msg(
+      "global-status",
+      "Feedback saved for your workspace owner and administrators.",
+    );
+    if (admin()) await loadFeedback();
+  });
+};
+function loadFeedback(append = false) {
+  return paginate(
+    "feedback",
+    "/api/feedback",
+    "feedback",
+    (item) => {
+      const row = el("article", undefined, "event-row");
+      row.append(
+        el(
+          "strong",
+          `${item.rating}/5 usefulness · ${item.kind.replace("_", " ")}`,
+        ),
+        el("p", item.note),
+        el("p", `${item.author_email} · ${time(item.created_at)}`, "small"),
+      );
+      if (item.review_id) {
+        const a = el("a", "Open related review");
+        a.href = `#review=${item.review_id}`;
+        a.onclick = (e) => {
+          e.preventDefault();
+          if (busy) return;
+          history.pushState(null, "", a.href);
+          openReview(item.review_id).catch((e) =>
+            msg("global-status", e.message, true),
+          );
+        };
+        row.append(a);
+      }
+      return row;
+    },
+    append,
+  );
+}
+$("refresh-feedback").onclick = () =>
+  loadFeedback().catch((e) => msg("global-status", e.message, true));
+$("export-feedback").onclick = () =>
+  mutate("global-status", async () => {
+    const data = await api("/api/feedback/export");
+    const url = URL.createObjectURL(
+      new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }),
+    );
+    const a = el("a");
+    a.href = url;
+    a.download = `veriq-pilot-feedback-${workspace.id}.json`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  });
 $("logout").onclick = () =>
   mutate("global-status", async () => {
     await api("/api/auth/logout", {});
@@ -844,13 +970,33 @@ $("revoke-sessions").onclick = () =>
     await api("/api/auth/revoke-sessions", {});
     location.href = "/login.html";
   });
+controls();
 (async () => {
   try {
     const hash = location.hash;
+    const health = await api("/api/health");
+    if (
+      health.mode !== "support_review" ||
+      health.v < 5 ||
+      !health.features?.includes("pilot_feedback")
+    )
+      throw new Error(
+        "The deployed API is older than this app. Apply migrations and deploy the API and Pages together before the demo.",
+      );
+
     user = (await api("/api/auth/me")).user;
     $("who").textContent = user.email;
     $("avatar").textContent = user.email[0].toUpperCase();
     await loadWorkspaces();
+    const demo = await api("/api/demo");
+    scenarios = demo.scenarios;
+    $("demo-scenario").replaceChildren(
+      ...scenarios.map((item) => {
+        const o = el("option", item.label);
+        o.value = item.id;
+        return o;
+      }),
+    );
     const id = hash.match(/^#review=([a-f0-9-]{36})$/)?.[1];
     if (id) await openReview(id);
   } catch (e) {

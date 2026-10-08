@@ -7,6 +7,7 @@ import { HttpError, json } from "./http.ts";
 import { workspaceRoutes, resolveScope } from "./workspaces.ts";
 import { documentRoutes } from "./documents.ts";
 import { reviewRoutes } from "./reviews.ts";
+import { pilotRoutes } from "./pilot.ts";
 export interface Env {
   AI: AIClient;
   DB: D1Database;
@@ -48,7 +49,13 @@ export default {
         return new Response(null, { status: 204, headers });
       if (req.method === "GET" && url.pathname === "/api/health")
         return json(
-          { ok: true, service: "veriq-api", v: 4, mode: "support_review" },
+          {
+            ok: true,
+            service: "veriq-api",
+            v: 5,
+            mode: "support_review",
+            features: ["workspaces", "pilot_feedback", "sample_demo"],
+          },
           200,
           headers,
         );
@@ -88,7 +95,9 @@ export default {
             : 200,
           headers,
         );
-      if (!/^\/api\/(documents|reviews)(?:\/|$)/.test(url.pathname))
+      if (
+        !/^\/api\/(documents|reviews|demo|feedback)(?:\/|$)/.test(url.pathname)
+      )
         throw new HttpError(404, "Endpoint not found.", "NOT_FOUND");
       const scope = await resolveScope(
         env.DB,
@@ -97,7 +106,8 @@ export default {
       );
       const result =
         (await documentRoutes(req, url, scope)) ??
-        (await reviewRoutes(req, url, scope, env.AI));
+        (await reviewRoutes(req, url, scope, env.AI)) ??
+        (await pilotRoutes(req, url, scope));
       if (!result) throw new HttpError(404, "Endpoint not found.", "NOT_FOUND");
       const attachment: Record<string, string> =
         /^\/api\/reviews\/[a-f0-9-]{36}\/export$/.test(url.pathname)
@@ -108,7 +118,9 @@ export default {
       return json(
         result,
         req.method === "POST" &&
-          ["/api/documents", "/api/reviews"].includes(url.pathname)
+          ["/api/documents", "/api/reviews", "/api/feedback"].includes(
+            url.pathname,
+          )
           ? 201
           : 200,
         { ...headers, ...attachment },

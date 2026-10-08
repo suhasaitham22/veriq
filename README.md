@@ -15,6 +15,18 @@ Veriq gives support teams a private, shared workspace for policy versions, sente
 
 Veriq does not access customer account records, send replies, establish universal truth or search the public web. It is a foundation for enterprise pilots, not an enterprise certification or a measured accuracy guarantee. SSO, MFA, verified invitations, password recovery, billing and helpdesk interception are not implemented.
 
+## Company demo and feedback
+
+Start with **Set up sample demo** in your personal workspace, choose a documented fact, wrong plan benefit or unsupported account promise, and run the actual review engine. Fictional `[Sample]` policies stay separate from company policies and cannot bypass two-person team approval.
+
+Any workspace member can submit private usefulness/evidence feedback, optionally linked to a review. Owners/admins can inspect and export it. Feedback is subjective pilot input, not a model accuracy measure. Read [the company demo and deployment guide](docs/COMPANY_DEMO.md) before sharing the app link.
+
+```sh
+npm run verify:deployment -- https://veriq-1q9.pages.dev
+```
+
+This read-only check rejects an old API, missing Pages proxy, mismatched frontend, or exposed legacy public receipts. Run the signed-in live-AI workflow after it passes.
+
 ## Roles
 
 | Capability                                          | Owner | Admin | Reviewer | Viewer |
@@ -23,6 +35,8 @@ Veriq does not access customer account records, send replies, establish universa
 | Create policy drafts and review replies             | Yes   | Yes   | Yes      | No     |
 | Record human review decisions                       | Yes   | Yes   | Yes      | No     |
 | Approve/archive policy versions                     | Yes   | Yes   | No       | No     |
+| Submit pilot feedback                               | Yes   | Yes   | Yes      | Yes    |
+| Read/export pilot feedback                          | Yes   | Yes   | No       | No     |
 | Read audit trail; manage reviewer/viewer membership | Yes   | Yes   | No       | No     |
 | Appoint/change administrator membership             | Yes   | No    | No       | No     |
 
@@ -98,10 +112,12 @@ Auth routes are `/api/auth/signup`, `/login`, `/logout`, `/me` and `/revoke-sess
 
 Limits: 3,000 draft characters, 12 sentences, 10 selected documents, 20,000 characters per document, 60,000 characters per selected policy set, 500 document versions per workspace, 10 owned team workspaces and 50 review attempts per account per UTC day. Model failures consume an attempt and leave explicit failure receipts. Authentication is limited atomically in D1 to 10 attempts per minute per connecting IP. Source URLs are links only, never remotely fetched.
 
+Pilot APIs: `GET /api/demo` lists the fictional policy and three scenarios; `POST /api/demo/setup` requires `{confirmSamplePolicies:true}` in a personal workspace. `POST /api/feedback` accepts `{rating:1..5,kind:'usability'|'evidence'|'policy_gap'|'other',note,reviewId?}`. Administrative `GET /api/feedback` paginates and summarizes usefulness ratings; `GET /api/feedback/export` downloads all notes (maximum 1,000). Submission is limited to 10 notes per account per UTC day. Feedback writes and audit events commit together.
+
 ## Architecture and rollout
 
 Cloudflare Pages serves the UI and first-party API proxy. Workers handles the API; Workers AI (`gpt-oss-20b`) evaluates full selected document text; D1 stores workspaces, roles, sessions, policies, reviews, leases and atomic audit events. KV is no longer required by auth. [Architecture and rollout](docs/ARCHITECTURE.md) describes migrations, deployment and limitations.
 
-This code does not migrate the production database or publish a deployment. Apply migration `0003_workspaces.sql` after the two earlier migrations and deploy the API/UI together. Existing accounts, documents and historical reviews move into their own personal workspaces.
+This code does not migrate the production database or publish a deployment. Apply migrations `0003_workspaces.sql` and `0004_pilot_feedback.sql` after the two earlier migrations and deploy the API/UI together. Existing accounts, documents and historical reviews move into their own personal workspaces.
 
 MIT — see LICENSE.

@@ -12,6 +12,7 @@ export function database() {
     "0001_existing_auth.sql",
     "0002_support_review.sql",
     "0003_workspaces.sql",
+    "0004_pilot_feedback.sql",
   ]) {
     sqlite.exec(
       readFileSync(

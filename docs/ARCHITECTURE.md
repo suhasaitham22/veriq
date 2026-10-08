@@ -31,6 +31,14 @@ Daily quota and authentication limits use conditional atomic D1 upserts. Review 
 
 The app has a review desk and queue, source selector, searchable version library, text/Markdown import, team management and administrative audit trail. Lists paginate by time plus ID to handle timestamp ties. Query text is bound and LIKE wildcards escaped. Search sequence numbers and workspace generations keep late responses from overwriting a newer view. Editing a draft invalidates the current result and cancels pending historical rendering. Mutations temporarily disable workspace switching and draft/source edits. Policy changes clear current receipts. Dynamic text uses textContent; imported markup cannot become executable HTML. Mobile layouts retain sign-out controls.
 
+## Demo and pilot feedback
+
+Migration 0004 adds `pilot_feedback` without changing prior data. Every member, including viewers, may submit a private usefulness rating, category and note, optionally linked to a review in the same workspace. Only owners/admins can list or export notes. Writes recheck membership in SQL and commit their audit event atomically. Notes are append-only through the API; audit metadata excludes the note text. Limits are 10 notes per account/day and 1,000 per workspace.
+
+The guided sample setup is explicitly confirmed, personal-workspace-only and idempotent. It creates a labeled fictional policy with an approval audit record. It cannot approve an existing version with different content, revive archived versions, or disable team approval. Sample scenarios call the actual model, with expected behavior explained rather than prerecorded results.
+
+The release check rejects homepage HTML at `/api/health`, old API versions, active public receipt routes and mismatched frontend assets. The UI also checks the API version before enabling workspace workflows. It cannot substitute for a signed-in/live-AI smoke test or a production database migration check. [Company demo guide](COMPANY_DEMO.md) contains the operator handoff and pilot script.
+
 ## Verification and limits
 
 Automated tests execute production SQL through SQLite and the production API handler. Browser tests use the same handler, persisted state and controlled model replies across two accounts. Coverage includes workspace isolation, roles, two-person approval, expiry, migration preservation, immutable records, audit rollback, retry races, stale permissions, optimistic decisions, exports, session revocation, quote validation, model failures, safe rendering and responsive layouts.
@@ -42,7 +50,7 @@ Enterprise identity controls (SSO/MFA, email verification, invitation acceptance
 ## Migration and coordinated rollout
 
 1. Back up the target D1 database; inspect existing schemas against migrations 0001/0002. In particular, quota upserts require a unique `(ip,day)` key on `usage`. Check earlier migration history before applying bootstrap commands to an existing database.
-2. Apply `0003_workspaces.sql` after 0001/0002 to a staging database with representative data. It creates personal workspaces/memberships for existing users, rebuilds the policy table with workspace/version uniqueness, and preserves historical review JSON. It changes schema; take a backup rather than assuming a destructive down migration is safe.
+2. Apply `0003_workspaces.sql` after 0001/0002, then `0004_pilot_feedback.sql` to a staging database with representative data. It creates personal workspaces/memberships for existing users, rebuilds the policy table with workspace/version uniqueness, and preserves historical review JSON. It changes schema; take a backup rather than assuming a destructive down migration is safe.
 3. Run membership, approval, historic evidence and cross-workspace access checks against staging. Compare policy/review counts and hashes before and after migration. An upgrade regression test covers preserved users, approved policies and historical JSON locally.
 4. Configure API `WEB_ORIGIN` and Pages `API_ORIGIN` for the same environment. Reconcile production-only Slack/Discord handlers with this repository before replacing the Worker; they were not part of the earlier repository snapshot.
 5. Deploy API and Pages together in an authorized maintenance window, including `_worker.js` and `_routes.json`. Run real Workers AI tests with nonsensitive documents and verify the response envelope, latency and cost.
