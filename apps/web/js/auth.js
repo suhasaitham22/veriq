@@ -1,12 +1,12 @@
 // auth.js — login/signup client. Talks to the Worker API with cookies.
-const API = "https://veriq-api.suhasaitham22.workers.dev";
+const API = window.VERIQ_API;
 
 const $ = (id) => document.getElementById(id);
 const mode = new URLSearchParams(location.search).get("mode") === "signup" ? "signup" : "login";
 
 if (mode === "signup") {
   $("title").textContent = "Create your account";
-  $("subtitle").textContent = "Free forever. No credit card.";
+  $("subtitle").textContent = "Create a private document library for support draft reviews.";
   $("submit").textContent = "Create account";
   $("password").setAttribute("autocomplete", "new-password");
   $("switch").innerHTML = 'Already have an account? <a href="/login.html">Log in</a>';
