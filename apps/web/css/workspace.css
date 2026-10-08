@@ -762,3 +762,55 @@ dialog::backdrop {
     scroll-behavior: auto !important;
   }
 }
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.demo-panel {
+  margin-bottom: 24px;
+}
+.demo-panel p {
+  margin-bottom: 8px;
+}
+.demo-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.demo-actions select {
+  font-size: 12px;
+}
+#demo-status {
+  font-size: 12px;
+  margin-top: 12px;
+}
+.demo-panel h2 {
+  font-size: 16px;
+}
+#feedback-note {
+  min-height: 120px;
+}
+#view-feedback .event-row > p {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+#feedback-fields select {
+  width: 100%;
+}
+@media (max-width: 850px) {
+  .topbar-actions {
+    gap: 8px;
+  }
+  .privacy-tag {
+    display: none;
+  }
+  .demo-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .demo-actions select {
+    width: 100%;
+  }
+}

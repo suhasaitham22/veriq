@@ -118,6 +118,63 @@ try {
   await page.getByLabel("Password").fill("pilot-test-password");
   await page.getByRole("button", { name: "Create account" }).click();
   await page.waitForURL("**/app.html");
+  await page
+    .getByRole("button", { name: "Set up sample demo", exact: true })
+    .click();
+  await page
+    .getByText(
+      "Sample policy ready. These examples use the actual review engine.",
+    )
+    .waitFor();
+  await page.getByLabel("Demo scenario").selectOption("supported");
+  await page
+    .getByRole("button", { name: "Load scenario", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Review draft", exact: true }).click();
+  await page.locator("#results .ready_for_review").waitFor();
+  await page
+    .getByRole("button", { name: "Give feedback", exact: true })
+    .click();
+  await page.getByLabel("How useful was this workflow?").selectOption("4");
+  await page.getByLabel("Feedback category").selectOption("evidence");
+  await page
+    .getByLabel("What worked, and what should improve?")
+    .fill(
+      "<script>window.hacked=true</script> Exact quotes made the policy easy to check.",
+    );
+  await page
+    .getByRole("button", { name: "Save feedback", exact: true })
+    .click();
+  await page
+    .getByText("Feedback saved for your workspace owner and administrators.")
+    .waitFor();
+  await page
+    .getByRole("button", { name: "Pilot feedback", exact: true })
+    .click();
+  await page
+    .locator("#feedback")
+    .getByText(
+      "<script>window.hacked=true</script> Exact quotes made the policy easy to check.",
+      { exact: true },
+    )
+    .waitFor();
+  assert.equal(await page.locator("#feedback script").count(), 0);
+  const feedbackDownload = page.waitForEvent("download");
+  await page
+    .getByRole("button", { name: "Export feedback JSON", exact: true })
+    .click();
+  assert.match(
+    (await feedbackDownload).suggestedFilename(),
+    /^veriq-pilot-feedback-.*\.json$/,
+  );
+  await page.getByRole("button", { name: "Review desk", exact: true }).click();
+  await page.getByLabel("Demo scenario").selectOption("missing");
+  await page
+    .getByRole("button", { name: "Load scenario", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Review draft", exact: true }).click();
+  await page.locator("#results .needs_review").waitFor();
+  // Original manual policy flow remains available after the guided demo.
   await page.getByRole("button", { name: "Load example" }).click();
   await page.getByRole("button", { name: "Save draft document" }).click();
   await page.getByRole("button", { name: "Approve this version" }).click();
@@ -125,6 +182,9 @@ try {
     .getByText("Document approved. Select it in Review sources.")
     .waitFor();
   await page.getByRole("button", { name: "Review desk" }).click();
+  await page
+    .getByLabel("Use [Sample] Export and refund policy, version demo-v1")
+    .uncheck();
   await page.getByLabel("Use Example export policy, version pilot-1").check();
   await page.getByRole("button", { name: "Review draft" }).click();
   await page.locator("#results .requires_changes").waitFor();
@@ -269,6 +329,37 @@ try {
     await bobPage.getByRole("button", { name: "Team & access" }).isVisible(),
     false,
   );
+  assert.equal(
+    await bobPage
+      .getByRole("button", { name: "Pilot feedback", exact: true })
+      .isVisible(),
+    false,
+  );
+  await bobPage
+    .getByRole("button", { name: "Give feedback", exact: true })
+    .click();
+  await bobPage.getByLabel("How useful was this workflow?").selectOption("3");
+  await bobPage
+    .getByLabel("What worked, and what should improve?")
+    .fill(
+      "As a viewer, I could inspect evidence but could not change decisions.",
+    );
+  await bobPage
+    .getByRole("button", { name: "Save feedback", exact: true })
+    .click();
+  await bobPage
+    .getByText("Feedback saved for your workspace owner and administrators.")
+    .waitFor();
+  await page
+    .getByRole("button", { name: "Pilot feedback", exact: true })
+    .click();
+  await page
+    .locator("#feedback")
+    .getByText(
+      "As a viewer, I could inspect evidence but could not change decisions.",
+      { exact: true },
+    )
+    .waitFor();
   await bobContext.close();
   await page.getByRole("button", { name: "Review desk" }).click();
   await page.waitForFunction(
@@ -286,7 +377,7 @@ try {
   assert.equal(errors.length, 0, errors.join("\n"));
   assert.equal(
     f.sqlite.prepare("SELECT COUNT(*) AS n FROM support_reviews").get().n,
-    3,
+    5,
   );
   await page.getByRole("button", { name: "Documents", exact: true }).click();
   page.once("dialog", (dialog) => dialog.accept());
@@ -320,8 +411,36 @@ try {
     .getByText("Enterprise support", { exact: true })
     .waitFor();
   assert.equal(errors.length, 0, errors.join("\n"));
+  const staleContext = await browser.newContext();
+  const stalePage = await staleContext.newPage();
+  await stalePage.route("**/api/health", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ ok: true, service: "veriq-api", v: 2 }),
+    }),
+  );
+  await stalePage.goto(`${origin}/app.html`);
+  await stalePage
+    .getByText(
+      "The deployed API is older than this app. Apply migrations and deploy the API and Pages together before the demo.",
+    )
+    .waitFor();
+  assert.equal(
+    await stalePage
+      .getByRole("button", { name: "Set up sample demo", exact: true })
+      .isDisabled(),
+    true,
+  );
+  assert.equal(
+    await stalePage
+      .getByRole("button", { name: "Review draft", exact: true })
+      .isDisabled(),
+    true,
+  );
+  await staleContext.close();
   console.log(
-    "Browser smoke passed: signup, approved document, contradictory/supported/missing evidence, history, edit invalidation, text import, safe rendering, archival, mobile layout, shared workspace, two-person approval, human decision, export, audit, role downgrade, logout and login.",
+    "Browser smoke passed: signup, sample setup/scenarios, feedback collection/export/access, stale-release guard, approved document, contradictory/supported/missing evidence, history, edit invalidation, text import, safe rendering, archival, mobile layout, shared workspace, two-person approval, human decision, export, audit, role downgrade, logout and login.",
   );
 } finally {
   await browser?.close();

@@ -36,6 +36,9 @@
         <button data-view="audit">
           <span aria-hidden="true">◷</span> Audit trail
         </button>
+        <button data-view="feedback">
+          <span aria-hidden="true">✎</span> Pilot feedback
+        </button>
       </nav>
       <div class="sidebar-footer">
         <div class="avatar" aria-hidden="true" id="avatar">V</div>
@@ -50,8 +53,12 @@
     </aside>
     <div class="app-main">
       <header class="app-topbar">
-        <span id="workspace-name">Loading workspace…</span
-        ><span class="privacy-tag">● Private workspace</span>
+        <span id="workspace-name">Loading workspace…</span>
+        <div class="topbar-actions">
+          <button id="give-feedback" class="btn btn-ghost btn-sm">
+            Give feedback</button
+          ><span class="privacy-tag">● Private workspace</span>
+        </div>
       </header>
       <main class="app-content">
         <div class="page-heading">
@@ -83,6 +90,35 @@
         </section>
 
         <section id="view-review" class="view-panel">
+          <section
+            id="demo-panel"
+            class="card demo-panel"
+            aria-label="Guided sample demo"
+          >
+            <div>
+              <h2>Try the sample demo</h2>
+              <p class="small">
+                1. Set up a fictional policy. 2. Review a documented fact, a
+                wrong plan benefit, or an unsupported promise. 3. Record your
+                decision and feedback.
+              </p>
+              <p class="small" id="demo-help">
+                Setup approves fictional sample text only in your personal
+                workspace. Company policies keep their normal approval process.
+              </p>
+            </div>
+            <div class="demo-actions">
+              <button id="setup-demo" class="btn btn-ghost btn-sm">
+                Set up sample demo</button
+              ><label class="sr-only" for="demo-scenario">Demo scenario</label
+              ><select id="demo-scenario" disabled>
+                <option value="">Choose an example</option></select
+              ><button id="load-scenario" class="btn btn-ghost btn-sm" disabled>
+                Load scenario
+              </button>
+            </div>
+            <div id="demo-status" role="status" aria-live="polite"></div>
+          </section>
           <div class="review-layout">
             <div class="review-primary">
               <section class="card composer">
@@ -352,6 +388,35 @@
             </button>
           </section>
         </section>
+        <section id="view-feedback" class="view-panel" hidden>
+          <section class="card">
+            <div class="section-title">
+              <div>
+                <h2>Pilot feedback</h2>
+                <p class="small">
+                  Subjective usefulness ratings and notes from this workspace.
+                  These are not model accuracy measurements.
+                </p>
+                <p id="feedback-summary" class="small"></p>
+              </div>
+              <div class="row-actions">
+                <button id="refresh-feedback" class="btn btn-ghost btn-sm">
+                  Refresh feedback</button
+                ><button
+                  id="export-feedback"
+                  class="btn btn-ghost btn-sm"
+                  data-admin
+                >
+                  Export feedback JSON
+                </button>
+              </div>
+            </div>
+            <div id="feedback"></div>
+            <button id="more-feedback" class="btn btn-ghost btn-sm" hidden>
+              Load more feedback
+            </button>
+          </section>
+        </section>
       </main>
     </div>
     <dialog id="workspace-dialog">
@@ -381,6 +446,59 @@
           Create workspace
         </button>
         <div id="workspace-status" role="status"></div>
+      </form>
+    </dialog>
+    <dialog id="feedback-dialog">
+      <form id="feedback-form">
+        <div class="section-title">
+          <h2>Share pilot feedback</h2>
+          <button
+            type="button"
+            class="text-button"
+            id="close-feedback"
+            aria-label="Close feedback dialog"
+          >
+            ✕
+          </button>
+        </div>
+        <p class="small">
+          Saved in this workspace for its owner and admins. Please leave out
+          customer names, account numbers and private customer details.
+        </p>
+        <p id="feedback-context" class="small"></p>
+        <fieldset id="feedback-fields">
+          <label for="feedback-rating">How useful was this workflow?</label
+          ><select id="feedback-rating" required>
+            <option value="">Choose a rating</option>
+            <option value="1">1 — Not useful</option>
+            <option value="2">2 — Slightly useful</option>
+            <option value="3">3 — Moderately useful</option>
+            <option value="4">4 — Useful</option>
+            <option value="5">5 — Very useful</option></select
+          ><label for="feedback-kind">Feedback category</label
+          ><select id="feedback-kind">
+            <option value="usability">Workflow and usability</option>
+            <option value="evidence">
+              Evidence quality or incorrect finding
+            </option>
+            <option value="policy_gap">
+              Missing policy or account context
+            </option>
+            <option value="other">Other</option></select
+          ><label for="feedback-note"
+            >What worked, and what should improve?</label
+          ><textarea
+            id="feedback-note"
+            minlength="10"
+            maxlength="2000"
+            required
+            placeholder="Describe a specific example or obstacle (at least 10 characters)."
+          ></textarea
+          ><button class="btn form-submit" id="submit-feedback" type="submit">
+            Save feedback
+          </button>
+        </fieldset>
+        <div id="feedback-status" role="status" aria-live="polite"></div>
       </form>
     </dialog>
     <script src="config.js"></script>
