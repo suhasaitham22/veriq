@@ -1,1 +1,32 @@
-{"description":"Verify anything — claim verification with real sources.","license":"MIT","name":"veriq","private":true,"scripts":{"dev:api":"wrangler dev --cwd apps/api","dev:web":"wrangler pages dev apps/web"},"version":"0.1.0","workspaces":["apps/*","extensions/*"]}
+{
+  "description": "Review AI-generated support drafts against approved company documents.",
+  "license": "MIT",
+  "name": "veriq",
+  "private": true,
+  "scripts": {
+    "dev:api": "wrangler dev --cwd apps/api --port 8787 --var WEB_ORIGIN:http://localhost:8788",
+    "dev:web": "wrangler pages dev apps/web --port 8788 --binding API_ORIGIN=http://127.0.0.1:8787",
+    "test": "node --test tests/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "check": "npm run typecheck && npm test",
+    "build:api": "node scripts/build.mjs",
+    "db:migrate:local": "wrangler d1 migrations apply veriq-db --local --cwd apps/api",
+    "test:browser": "node tests/browser-smoke.mjs"
+  },
+  "version": "0.2.0",
+  "workspaces": [
+    "apps/*",
+    "extensions/*"
+  ],
+  "devDependencies": {
+    "@cloudflare/workers-types": "5.20261008.1",
+    "esbuild": "0.28.2",
+    "playwright": "1.58.2",
+    "typescript": "7.0.2",
+    "wrangler": "4.149.0"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "type": "module"
+}

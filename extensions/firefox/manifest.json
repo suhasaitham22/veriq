@@ -1,1 +1,14 @@
-{"action":{"default_popup":"../shared/popup.html"},"browser_specific_settings":{"gecko":{"id":"veriq@example.com"}},"content_scripts":[{"js":["../shared/content.js"],"matches":["<all_urls>"],"run_at":"document_idle"}],"description":"Verify any claim on any page — with real sources.","host_permissions":["<all_urls>"],"manifest_version":3,"name":"Veriq","permissions":["activeTab","scripting","storage"],"version":"0.1.0"}
+{
+  "action": {
+    "default_popup": "shared/popup.html"
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "veriq@example.com"
+    }
+  },
+  "description": "Open your private workspace to review support drafts against approved documents.",
+  "manifest_version": 3,
+  "name": "Veriq",
+  "version": "0.2.0"
+}

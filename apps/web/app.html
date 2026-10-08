@@ -1,39 +1,10 @@
 <!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Dashboard — Veriq</title>
-<link rel="stylesheet" href="css/styles.css">
-</head>
-<body class="page">
-<nav class="nav"><div class="nav-inner">
-  <a class="logo" href="/">Veriq<span class="q">?</span></a>
-  <div class="nav-links">
-    <span class="user-chip"><span id="who"></span><button id="logout">Log out</button></span>
-  </div>
-</div></nav>
-
-<main class="dash">
-  <div class="dash-head">
-    <h1>Verify anything</h1>
-  </div>
-
-  <div id="shared-view"></div>
-
-  <div id="verify-view">
-    <textarea class="verify-box" id="input" placeholder="Paste text to verify — an article excerpt, a claim you saw online, anything factual…"></textarea>
-    <button class="btn" id="go">Verify</button>
-    <div id="status"></div>
-    <div id="results"></div>
-  </div>
-
-  <div class="hist">
-    <h2>Recent verifications</h2>
-    <div id="history"></div>
-  </div>
-</main>
-
-<script src="app.js"></script>
-</body>
-</html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Support review — Veriq</title><link rel="stylesheet" href="css/styles.css"></head>
+<body><nav class="nav"><div class="nav-inner"><a class="logo" href="/">Veriq</a><div class="user-chip"><span id="who"></span><button id="logout">Log out</button></div></div></nav>
+<main class="dash"><div class="dash-head"><p class="eyebrow">Evidence before send</p><h1>Review a support draft</h1><p>Select approved policies, paste the reply, and inspect the evidence. Reviews and documents are private to your account.</p></div>
+<div class="workspace"><aside class="card"><h2>Document library</h2><p class="small">Save an immutable version, then approve it. Archive outdated versions so they cannot be used in new reviews.</p>
+<form id="document-form"><label for="doc-title">Document title</label><input id="doc-title" maxlength="120" required placeholder="Refund policy"><label for="doc-version">Version</label><input id="doc-version" maxlength="60" required placeholder="2026-10"><label for="doc-url">Source link (optional)</label><input id="doc-url" type="url" maxlength="2000" placeholder="https://docs.example.com/refunds"><label for="doc-content">Approved policy text</label><textarea id="doc-content" maxlength="20000" required placeholder="Paste the policy text, including eligibility conditions and exceptions."></textarea><button class="btn btn-ghost" id="save-document" type="submit">Save draft document</button></form>
+<div id="doc-status" role="status" aria-live="polite"></div><h3 style="margin-top:24px">Select documents for this review</h3><div id="documents"></div></aside>
+<section><div class="card"><div class="draft-header"><h2>Customer reply draft</h2><button class="btn btn-ghost btn-sm" id="load-example">Load pilot example</button></div><p class="small">Use up to 12 sentences and 3,000 characters. Include the applicable product, plan, and policy conditions. Account-specific promises require additional evidence.</p><label for="input">Reply to review</label><textarea id="input" maxlength="3000" placeholder="Paste the AI-generated reply you plan to send…"></textarea><div class="actions"><button class="btn" id="go">Review against selected documents</button></div><div id="status" role="status" aria-live="polite"></div><div id="results"></div></div>
+<div class="hist card"><h2>Recent private reviews</h2><div id="history"></div></div></section></div>
+</main><script src="config.js"></script><script src="app.js"></script></body></html>

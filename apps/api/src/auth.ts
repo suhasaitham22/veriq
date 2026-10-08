@@ -83,7 +83,7 @@ export async function getSessionUser(req: Request, db: D1Database): Promise<User
   const row = await db.prepare(
     `SELECT u.id, u.email, u.created_at FROM sessions s
      JOIN users u ON u.id = s.user_id
-     WHERE s.token_hash = ? AND s.expires_at > datetime('now')`
+     WHERE s.token_hash = ? AND s.expires_at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now')`
   ).bind(tokenHash).first<User>();
   return row ?? null;
 }
