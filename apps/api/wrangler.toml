@@ -15,11 +15,12 @@ database_id = "180710a2-bbc6-41cc-9203-7df4c3852cb0"
 binding = "CACHE"
 id = "2be846dc543641cb93e12c4772c3f172"
 
-# R2 snapshots deferred until R2 is activated on the account
-# (requires a payment method on file; free tier is $0 base).
+# Private media: after activating R2, create a PRIVATE bucket and uncomment.
+# No r2.dev public URL or public custom domain should be enabled.
 # [[r2_buckets]]
-# binding = "SNAPSHOTS"
-# bucket_name = "veriq-snapshots"
+# binding = "MEDIA"
+# bucket_name = "veriq-media"
+# See docs/EVIDENCE_CHAT.md for local/staging/production provisioning.
 
 [ai]
 binding = "AI"

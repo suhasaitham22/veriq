@@ -27,10 +27,14 @@ export async function verifyDeployment(baseUrl, fetcher = fetch) {
   if (
     health.service !== "veriq-api" ||
     health.mode !== "support_review" ||
-    health.v < 5 ||
-    !["workspaces", "pilot_feedback", "sample_demo"].every((f) =>
-      health.features?.includes(f),
-    )
+    health.v < 6 ||
+    ![
+      "workspaces",
+      "pilot_feedback",
+      "sample_demo",
+      "evidence_store",
+      "ai_chat",
+    ].every((f) => health.features?.includes(f))
   )
     throw new Error(
       "The API is an older release. Deploy the support-review API and web app together.",
@@ -55,7 +59,9 @@ export async function verifyDeployment(baseUrl, fetcher = fetch) {
     page.status !== 200 ||
     !html.includes("workspace-select") ||
     !html.includes("feedback-dialog") ||
-    !html.includes("demo-scenario")
+    !html.includes("demo-scenario") ||
+    !html.includes("evidence-form") ||
+    !html.includes("chat-form")
   )
     throw new Error(
       "The deployed frontend does not contain this release’s workspace/demo/feedback interface.",
@@ -70,6 +76,7 @@ export async function verifyDeployment(baseUrl, fetcher = fetch) {
     origin: origin.origin,
     apiVersion: health.v,
     features: health.features,
+    mediaAvailable: !!health.mediaAvailable,
   };
 }
 if (import.meta.url === new URL(process.argv[1], "file:").href) {

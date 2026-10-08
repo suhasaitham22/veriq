@@ -42,3 +42,9 @@ Compare Veriq with a simple LLM checker using the same approved source set. Repo
 
 Agree on pilot acceptance criteria with the buyer before measuring. No target
 accuracy, customer ROI, or production readiness is established by this commit.
+
+## Chat and reference evaluation
+
+Evaluate generated answers and pasted answers separately using the same held-out policies. Test follow-up questions, conflicting policy versions, missing account evidence and injected instructions in questions/history/policies. Record generation plus review latency and cost; generation and checking use the same model, so shared reasoning failures remain possible. A second model or deterministic business-rule evaluation is not implemented. Measure false approvals against independent human labels.
+
+Inspect a bookmark's actual destination during approval; its hash does not freeze the external page. Approving media records human inspection, not AI fact verification. Verify that added references cannot upgrade an unsupported receipt, archived items cannot be attached again, and access is denied across workspaces and after membership removal. Test actual R2 byte downloads and failure recovery in staging; the local object-store fixture does not establish Cloudflare account provisioning or production performance.

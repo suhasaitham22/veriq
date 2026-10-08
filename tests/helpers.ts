@@ -13,6 +13,7 @@ export function database() {
     "0002_support_review.sql",
     "0003_workspaces.sql",
     "0004_pilot_feedback.sql",
+    "0005_evidence_chat.sql",
   ]) {
     sqlite.exec(
       readFileSync(
@@ -96,4 +97,42 @@ export async function fixture(ai = fakeAI()) {
   const aliceToken = await createSession(db, alice);
   const bobToken = await createSession(db, bob);
   return { env, sqlite, alice, bob, aliceToken, bobToken };
+}
+
+/** Private object-store contract fixture; real bytes and metadata, no public URLs. */
+export function mediaBucket() {
+  const objects = new Map<
+    string,
+    { bytes: Uint8Array; customMetadata: Record<string, string> }
+  >();
+  const bucket = {
+    async put(key: string, value: Uint8Array, options: any) {
+      objects.set(key, {
+        bytes: new Uint8Array(value),
+        customMetadata: options.customMetadata,
+      });
+      return { key, size: value.length };
+    },
+    async head(key: string) {
+      const o = objects.get(key);
+      return o
+        ? { key, size: o.bytes.length, customMetadata: o.customMetadata }
+        : null;
+    },
+    async get(key: string) {
+      const o = objects.get(key);
+      return o
+        ? {
+            key,
+            size: o.bytes.length,
+            customMetadata: o.customMetadata,
+            body: new Response(o.bytes).body,
+          }
+        : null;
+    },
+    async delete(key: string) {
+      objects.delete(key);
+    },
+  } as unknown as R2Bucket;
+  return { bucket, objects };
 }

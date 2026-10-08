@@ -5,8 +5,14 @@ const health = {
   ok: true,
   service: "veriq-api",
   mode: "support_review",
-  v: 5,
-  features: ["workspaces", "pilot_feedback", "sample_demo"],
+  v: 6,
+  features: [
+    "workspaces",
+    "pilot_feedback",
+    "sample_demo",
+    "evidence_store",
+    "ai_chat",
+  ],
 };
 function responses(extra: any = {}) {
   return async (url: any) => {
@@ -24,9 +30,12 @@ function responses(extra: any = {}) {
       return (
         extra.receipt ?? Response.json({ error: "Retired" }, { status: 410 })
       );
-    return new Response("workspace-select feedback-dialog demo-scenario", {
-      headers: { "content-security-policy": "script-src 'self'" },
-    });
+    return new Response(
+      "workspace-select feedback-dialog demo-scenario evidence-form chat-form",
+      {
+        headers: { "content-security-policy": "script-src 'self'" },
+      },
+    );
   };
 }
 test("release check validates the deployed API, private access, retired sharing and matching frontend", async () => {
@@ -34,7 +43,7 @@ test("release check validates the deployed API, private access, retired sharing 
     "https://demo.example.test",
     responses(),
   );
-  assert.equal(result.apiVersion, 5);
+  assert.equal(result.apiVersion, 6);
 });
 test("release check rejects an HTML SPA fallback instead of treating HTTP 200 as success", async () => {
   await assert.rejects(

@@ -124,7 +124,7 @@ export function retrievePassages(
   });
 }
 
-function modelText(result: unknown): string {
+export function modelText(result: unknown): string {
   const r = result as {
     response?: unknown;
     status?: string;
@@ -195,7 +195,7 @@ function receipt(
   };
 }
 
-async function withTimeout<T>(
+export async function withTimeout<T>(
   work: Promise<T>,
   milliseconds: number,
 ): Promise<T> {

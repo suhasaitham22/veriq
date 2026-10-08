@@ -30,6 +30,12 @@
         <button data-view="documents">
           <span aria-hidden="true">▤</span> Documents
         </button>
+        <button data-view="chat">
+          <span aria-hidden="true">✦</span> AI support chat
+        </button>
+        <button data-view="evidence">
+          <span aria-hidden="true">▧</span> Links &amp; media
+        </button>
         <button data-view="team">
           <span aria-hidden="true">◇</span> Team &amp; access
         </button>
@@ -322,6 +328,171 @@
                 </fieldset>
               </form>
               <div id="doc-status" role="status" aria-live="polite"></div>
+            </section>
+          </div>
+        </section>
+
+        <section id="view-evidence" class="view-panel" hidden>
+          <div class="document-layout">
+            <section class="card">
+              <div class="section-title">
+                <div>
+                  <h2>Reference store</h2>
+                  <p class="small">
+                    Approval records a human inspection. Links are bookmarks;
+                    they are not fetched or treated as policy text. Files are
+                    not analyzed by AI.
+                  </p>
+                </div>
+                <button id="refresh-evidence" class="btn btn-ghost btn-sm">
+                  Refresh references
+                </button>
+              </div>
+              <div class="filter-row">
+                <label class="sr-only" for="evidence-search"
+                  >Search references</label
+                ><input
+                  id="evidence-search"
+                  type="search"
+                  placeholder="Search title or context"
+                /><label class="sr-only" for="evidence-status"
+                  >Reference status</label
+                ><select id="evidence-status">
+                  <option value="">All statuses</option>
+                  <option value="draft">Draft</option>
+                  <option value="approved">Approved</option>
+                  <option value="archived">Archived</option>
+                </select>
+              </div>
+              <div id="evidence-list"></div>
+              <button
+                id="more-evidence-list"
+                class="btn btn-ghost btn-sm"
+                hidden
+              >
+                Load more references
+              </button>
+            </section>
+            <section class="card">
+              <h2>Save a reference</h2>
+              <p id="media-availability" class="small"></p>
+              <form id="evidence-form">
+                <fieldset id="evidence-fields">
+                  <label for="evidence-kind">Reference type</label
+                  ><select id="evidence-kind">
+                    <option value="link">Web link</option>
+                    <option value="media">Media or PDF file</option>
+                  </select>
+                  <label for="evidence-title">Reference title</label
+                  ><input id="evidence-title" maxlength="120" required />
+                  <div id="evidence-url-field">
+                    <label for="evidence-url">Reference URL</label
+                    ><input
+                      id="evidence-url"
+                      type="url"
+                      maxlength="2000"
+                      required
+                    />
+                  </div>
+                  <div id="evidence-file-field" hidden>
+                    <label for="evidence-file">Private file</label
+                    ><input
+                      id="evidence-file"
+                      type="file"
+                      accept="image/png,image/jpeg,application/pdf,audio/mpeg,audio/wav,video/mp4"
+                    />
+                    <p class="small">
+                      PNG, JPEG, PDF, MP3, WAV or MP4. Downloads remain private.
+                      File signatures are checked; no malware scanning is
+                      provided.
+                    </p>
+                  </div>
+                  <label for="evidence-note">Reference context</label
+                  ><textarea
+                    id="evidence-note"
+                    minlength="5"
+                    maxlength="2000"
+                    required
+                    placeholder="What does this reference establish, and what are its limitations?"
+                  ></textarea>
+                  <button class="btn form-submit" data-write>
+                    Save draft reference
+                  </button>
+                </fieldset>
+              </form>
+              <h3>Attach to a review</h3>
+              <p id="attachment-context" class="small">
+                Open a saved review and choose “Add supporting reference”. Then
+                attach an approved item from the store.
+              </p>
+              <label for="attachment-note">Attachment explanation</label
+              ><textarea
+                id="attachment-note"
+                maxlength="2000"
+                placeholder="Identify the claim this supports and explain why (at least 5 characters)."
+              ></textarea>
+              <div id="tools-status" role="status" aria-live="polite"></div>
+            </section>
+          </div>
+        </section>
+        <section id="view-chat" class="view-panel" hidden>
+          <div class="document-layout">
+            <section class="card">
+              <div class="section-title">
+                <h2>Ask approved policies</h2>
+                <button id="chat-new" class="btn btn-ghost btn-sm">
+                  New conversation
+                </button>
+              </div>
+              <p id="chat-context" class="small">
+                Select approved policies, then ask a support question.
+              </p>
+              <form id="chat-form">
+                <fieldset id="chat-fields">
+                  <label for="chat-question">Support question</label
+                  ><textarea
+                    id="chat-question"
+                    maxlength="2000"
+                    required
+                    placeholder="A customer asks about our refund window. Draft a reply."
+                  ></textarea
+                  ><button class="btn form-submit" data-write>
+                    Generate and check answer
+                  </button>
+                </fieldset>
+              </form>
+              <div id="chat-status" role="status" aria-live="polite"></div>
+              <div id="chat-output"></div>
+              <h3>Workspace conversations</h3>
+              <p class="small">
+                Saved questions and answers are visible to members of this
+                workspace. Up to six previous turns provide conversation
+                context. Only the current selected policies establish evidence.
+              </p>
+              <div id="chat-history"></div>
+              <button
+                id="more-chat-history"
+                class="btn btn-ghost btn-sm"
+                hidden
+              >
+                Load more chat turns
+              </button>
+            </section>
+            <section class="card">
+              <h2>Policies for this answer</h2>
+              <p class="small">
+                Select 1–10 currently active approved policies. AI answers run
+                through the claim checker and require human review. Links and
+                raw media are supporting attachments only.
+              </p>
+              <div id="chat-sources"></div>
+              <button
+                id="more-chat-sources"
+                class="btn btn-ghost btn-sm"
+                hidden
+              >
+                Load more chat policies
+              </button>
             </section>
           </div>
         </section>
