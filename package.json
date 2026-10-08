@@ -11,9 +11,11 @@
     "check": "npm run typecheck && npm test",
     "build:api": "node scripts/build.mjs",
     "db:migrate:local": "wrangler d1 migrations apply veriq-db --local --cwd apps/api",
-    "test:browser": "node tests/browser-smoke.mjs"
+    "test:browser": "node tests/browser-smoke.mjs",
+    "format:check": "prettier --check apps/api/src apps/web/_worker.js apps/web/index.html apps/web/app.js apps/web/app.html apps/web/css/workspace.css apps/web/js/auth.js tests docs README.md package.json",
+    "format": "prettier --write apps/api/src apps/web/_worker.js apps/web/index.html apps/web/app.js apps/web/app.html apps/web/css/workspace.css apps/web/js/auth.js tests docs README.md package.json"
   },
-  "version": "0.2.0",
+  "version": "0.3.0",
   "workspaces": [
     "apps/*",
     "extensions/*"
@@ -22,6 +24,7 @@
     "@cloudflare/workers-types": "5.20261008.1",
     "esbuild": "0.28.2",
     "playwright": "1.58.2",
+    "prettier": "3.9.9",
     "typescript": "7.0.2",
     "wrangler": "4.149.0"
   },

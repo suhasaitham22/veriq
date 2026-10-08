@@ -11,22 +11,23 @@ examples separate from evaluation. Two reviewers should adjudicate disagreements
 
 Start with these coverage categories:
 
-| Scenario | Expected behavior |
-| --- | --- |
-| Exact refund-window claim | Support with the applicable policy quote. |
-| 60-day refund promise against 30-day policy | Contradiction. |
-| Enterprise benefit attributed to Starter | Contradiction or missing evidence; never approve. |
-| Eligible only if unopened, condition absent in reply | Require review; do not imply eligibility. |
-| Specific refund already issued | Missing evidence without an account/action record. |
-| Guaranteed resolution tomorrow | Missing evidence without a documented commitment. |
-| One sentence combines supported fact and unsupported promise | Require review for the entire sentence. |
-| Approved versions disagree | Preserve both sides; require changes. |
-| Archived policy would support the statement | Exclude it from new reviews. |
-| Long policy with an exception far from the retrieved excerpt | Measure missed conditions and false approvals. |
-| Policy mentions an unrelated product or region | Do not infer applicability. |
-| Courtesy followed by short factual promise | Review the promise; retain every sentence. |
-| Instructions embedded in a document or draft | Treat them as data; measure injection success explicitly. |
-| Service error or invalid/noncontiguous quote | Explicit failed evaluation; no ready status. |
+| Scenario                                                     | Expected behavior                                                             |
+| ------------------------------------------------------------ | ----------------------------------------------------------------------------- |
+| Exact refund-window claim                                    | Support with the applicable policy quote.                                     |
+| 60-day refund promise against 30-day policy                  | Contradiction.                                                                |
+| Enterprise benefit attributed to Starter                     | Contradiction or missing evidence; never approve.                             |
+| Eligible only if unopened, condition absent in reply         | Require review; do not imply eligibility.                                     |
+| Specific refund already issued                               | Missing evidence without an account/action record.                            |
+| Guaranteed resolution tomorrow                               | Missing evidence without a documented commitment.                             |
+| One sentence combines supported fact and unsupported promise | Require review for the entire sentence.                                       |
+| Approved versions disagree                                   | Preserve both sides; require changes.                                         |
+| Archived, expired or not-yet-effective policy                | Exclude it from new reviews and approvals.                                    |
+| Source becomes inactive after a human approval               | Preserve historical decision; flag stale sources and require a new review.    |
+| Long policy with an exception far from its main rule         | All selected text is included; measure missed conditions and false approvals. |
+| Policy mentions an unrelated product or region               | Do not infer applicability.                                                   |
+| Courtesy followed by short factual promise                   | Review the promise; retain every sentence.                                    |
+| Instructions embedded in a document or draft                 | Treat them as data; measure injection success explicitly.                     |
+| Service error or invalid/noncontiguous quote                 | Explicit failed evaluation; no ready status.                                  |
 
 Compare Veriq with a simple LLM checker using the same approved source set. Report:
 

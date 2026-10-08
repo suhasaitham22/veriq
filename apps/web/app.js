@@ -1,152 +1,859 @@
-const API = window.VERIQ_API;
 const $ = (id) => document.getElementById(id);
-let selected = new Set();
-const labels = { supported: "Supported", contradicted: "Contradicted", conflicting: "Conflicting evidence", unsupported: "Evidence missing", not_applicable: "Courtesy", ready_for_review: "Ready for human review", requires_changes: "Changes required", needs_review: "Needs human review" };
-async function api(path, body) {
-  const response = await fetch(`${API}${path}`, {
-    credentials: "include", ...(body === undefined ? {} : { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }),
+const labels = {
+  supported: "Supported",
+  contradicted: "Contradicted",
+  conflicting: "Conflicting evidence",
+  unsupported: "Evidence missing",
+  not_applicable: "Courtesy",
+  ready_for_review: "Ready for human review",
+  requires_changes: "Changes required",
+  needs_review: "Needs human review",
+};
+let user,
+  workspace,
+  workspaces = [],
+  selected = new Set(),
+  busy = false,
+  epoch = 0,
+  current = null,
+  overviewSequence = 0,
+  memberSequence = 0,
+  openSequence = 0,
+  retry = null;
+const pages = new Map();
+const writer = () => ["owner", "admin", "reviewer"].includes(workspace?.role);
+const admin = () => ["owner", "admin"].includes(workspace?.role);
+function el(tag, text, cls) {
+  const n = document.createElement(tag);
+  if (text !== undefined) n.textContent = text;
+  if (cls) n.className = cls;
+  return n;
+}
+function msg(id, text, error = false) {
+  $(id).textContent = text;
+  $(id).classList.toggle("error", error);
+}
+function time(value) {
+  return new Date(value.endsWith("Z") ? value : `${value}Z`).toLocaleString();
+}
+async function api(path, body, key) {
+  const headers = {
+    ...(workspace ? { "X-Workspace-ID": workspace.id } : {}),
+    ...(body !== undefined ? { "content-type": "application/json" } : {}),
+    ...(key ? { "Idempotency-Key": key } : {}),
+  };
+  const res = await fetch(`${window.VERIQ_API}${path}`, {
+    credentials: "include",
+    headers,
+    ...(body === undefined
+      ? {}
+      : { method: "POST", body: JSON.stringify(body) }),
   });
-  const data = await response.json();
-  if (response.status === 401) location.href = "/login.html";
-  if (!response.ok) throw new Error(data.error || "Request failed.");
+  if (res.status === 401) {
+    location.href = "/login.html";
+    throw new Error("Your session ended. Sign in again.");
+  }
+  const data = await res.json();
+  if (!res.ok)
+    throw new Error(
+      `${data.error || "Request failed."}${res.status >= 500 && data.requestId ? ` Reference: ${data.requestId}` : ""}`,
+    );
   return data;
 }
-function node(tag, text, className) {
-  const el = document.createElement(tag);
-  if (text !== undefined) el.textContent = text;
-  if (className) el.className = className;
-  return el;
+function controls() {
+  $("workspace-select").disabled = busy;
+  $("new-workspace").disabled = busy;
+  $("document-fields").disabled = busy || !writer();
+  $("member-fields").disabled = busy || !admin() || !!workspace?.is_personal;
+  $("input").disabled = busy || !writer();
+  $("go").disabled = busy || !writer();
+  $("load-example").disabled = busy || !writer();
+  document
+    .querySelectorAll("[data-admin]")
+    .forEach((n) => (n.disabled = busy || !admin()));
+  document
+    .querySelectorAll("[data-write]")
+    .forEach((n) => (n.disabled = busy || !writer()));
+  document
+    .querySelectorAll("[data-selection]")
+    .forEach((n) => (n.disabled = busy || !writer()));
+  document
+    .querySelectorAll(
+      '#workspace-nav [data-view="team"],#workspace-nav [data-view="audit"]',
+    )
+    .forEach((n) => (n.hidden = !admin()));
 }
-function message(id, text, error = false) { $(id).textContent = text; $(id).classList.toggle("error", error); }
-$("logout").addEventListener("click", async () => {
-  try { await api("/api/auth/logout", {}); location.href = "/"; }
-  catch (error) { message("status", error.message, true); }
-});
-$("document-form").addEventListener("submit", async (event) => {
-  event.preventDefault();
-  $("save-document").disabled = true;
+async function mutate(status, action) {
+  if (busy) return;
+  busy = true;
+  controls();
   try {
-    await api("/api/documents", { title: $("doc-title").value, version: $("doc-version").value, sourceUrl: $("doc-url").value, content: $("doc-content").value });
+    await action();
+  } catch (error) {
+    msg(status, error.message, true);
+  } finally {
+    busy = false;
+    controls();
+  }
+}
+function button(text, fn, permission) {
+  const n = el("button", text, "btn btn-ghost btn-sm");
+  n.type = "button";
+  if (permission) n.dataset[permission] = "";
+  n.addEventListener("click", () => mutate("global-status", fn));
+  return n;
+}
+const views = {
+  review: [
+    "Review desk",
+    "Check support answers against the policies your team approves.",
+  ],
+  documents: [
+    "Document library",
+    "Manage approved policy versions and their effective dates.",
+  ],
+  team: [
+    "Team & access",
+    "Control who can view, review and approve in this workspace.",
+  ],
+  audit: [
+    "Audit trail",
+    "Trace policy approvals, access changes and review decisions.",
+  ],
+};
+function view(name, refresh = true) {
+  if (["team", "audit"].includes(name) && !admin()) name = "review";
+  for (const key of Object.keys(views)) $(`view-${key}`).hidden = key !== name;
+  document
+    .querySelectorAll("#workspace-nav button")
+    .forEach((n) =>
+      n.setAttribute(
+        "aria-current",
+        n.dataset.view === name ? "page" : "false",
+      ),
+    );
+  $("page-title").textContent = views[name][0];
+  $("page-description").textContent = views[name][1];
+  if (refresh && workspace) {
+    const tasks = [overview()];
+    if (name === "review") tasks.push(loadSources(), loadHistory());
+    if (name === "documents") tasks.push(loadDocuments());
+    Promise.all(tasks).catch((e) => msg("global-status", e.message, true));
+  }
+  if (name === "team")
+    loadMembers().catch((e) => msg("team-status", e.message, true));
+  if (name === "audit")
+    loadAudit().catch((e) => msg("global-status", e.message, true));
+}
+$("workspace-nav").addEventListener("click", (e) => {
+  const n = e.target.closest("[data-view]");
+  if (n) view(n.dataset.view);
+});
+$("open-documents").onclick = () => view("documents");
+function invalidate(text = "Draft or sources changed. Run a new review.") {
+  openSequence++;
+  current = null;
+  retry = null;
+  $("results").replaceChildren();
+  msg("status", text);
+}
+function counts() {
+  $("draft-count").textContent =
+    `${$("input").value.length.toLocaleString()} / 3,000 characters · up to 12 sentences`;
+  $("document-count").textContent =
+    `${$("doc-content").value.length.toLocaleString()} / 20,000 characters`;
+  $("selected-count").textContent = `${selected.size} selected`;
+}
+$("input").oninput = () => {
+  counts();
+  invalidate();
+};
+$("doc-content").oninput = counts;
+async function overview() {
+  const version = epoch,
+    sequence = ++overviewSequence;
+  const data = await api(`/api/workspaces/${workspace.id}/overview`);
+  if (version !== epoch || sequence !== overviewSequence) return;
+  for (const [id, key] of [
+    ["active", "activeDocuments"],
+    ["drafts", "draftDocuments"],
+    ["pending", "pendingReviews"],
+    ["members", "members"],
+  ])
+    $(`metric-${id}`).textContent = data.counts[key];
+}
+async function loadWorkspaces(preferred) {
+  const data = await api("/api/workspaces");
+  workspaces = data.workspaces;
+  $("workspace-select").replaceChildren(
+    ...workspaces.map((w) => {
+      const n = el("option", w.name);
+      n.value = w.id;
+      return n;
+    }),
+  );
+  let saved;
+  try {
+    saved = localStorage.getItem("veriq-workspace");
+  } catch {
+    /* Storage can be unavailable. */
+  }
+  await switchWorkspace(preferred || saved || workspaces[0]?.id);
+}
+async function switchWorkspace(id) {
+  epoch++;
+  workspace = workspaces.find((w) => w.id === id) || workspaces[0];
+  selected.clear();
+  pages.clear();
+  invalidate("Select current policies and paste a customer reply.");
+  $("input").value = "";
+  $("document-form").reset();
+  $("member-form").reset();
+  for (const id of [
+    "source-search",
+    "document-search",
+    "history-search",
+    "document-filter",
+    "history-filter",
+  ])
+    $(id).value = "";
+  for (const id of [
+    "sources",
+    "documents",
+    "history",
+    "members",
+    "audit-events",
+    "global-status",
+    "doc-status",
+    "team-status",
+  ])
+    $(id).replaceChildren();
+  history.replaceState(null, "", location.pathname);
+  $("workspace-select").value = workspace.id;
+  $("workspace-name").textContent = workspace.name;
+  $("role-chip").textContent = workspace.role;
+  $("approval-mode").textContent = workspace.require_two_person
+    ? "Two-person policy approval"
+    : "Personal workspace";
+  $("document-approval-help").textContent = workspace.require_two_person
+    ? "Text is immutable. A different administrator must approve each version."
+    : "Text and metadata are immutable. Save changes as a new version.";
+  $("member-role").querySelector('[value="admin"]').disabled =
+    workspace.role !== "owner";
+  if (workspace.is_personal)
+    msg("team-status", "Create a team workspace to add members.");
+  try {
+    localStorage.setItem("veriq-workspace", workspace.id);
+  } catch {
+    /* Optional preference. */
+  }
+  view("review", false);
+  counts();
+  controls();
+  await Promise.all([
+    loadSources(),
+    loadDocuments(),
+    loadHistory(),
+    overview(),
+  ]);
+}
+$("workspace-select").onchange = () =>
+  switchWorkspace($("workspace-select").value).catch((e) =>
+    msg("global-status", e.message, true),
+  );
+// Each list has its own sequence number so slower searches cannot replace newer results.
+async function paginate(id, path, key, renderer, append = false) {
+  let state = pages.get(id) || { seq: 0, cursor: null };
+  pages.set(id, state);
+  if (append && !state.cursor) return;
+  const seq = ++state.seq,
+    version = epoch;
+  const url = new URL(path, location.origin);
+  url.searchParams.set("limit", "25");
+  if (append) url.searchParams.set("cursor", state.cursor);
+  const data = await api(url.pathname + url.search);
+  if (version !== epoch || seq !== state.seq) return;
+  if (!append) $(id).replaceChildren();
+  for (const item of data[key]) $(id).append(renderer(item));
+  if (!$(id).children.length)
+    $(id).append(el("p", "No matching records yet.", "empty-state"));
+  state.cursor = data.nextCursor;
+  $(`more-${id}`).hidden = !state.cursor;
+  controls();
+}
+function query(path, filters) {
+  const p = new URLSearchParams();
+  for (const [k, v] of Object.entries(filters)) if (v) p.set(k, v);
+  return `${path}?${p}`;
+}
+function loadSources(append = false) {
+  return paginate(
+    "sources",
+    query("/api/documents", {
+      status: "approved",
+      q: $("source-search").value,
+    }),
+    "documents",
+    sourceCard,
+    append,
+  );
+}
+function sourceCard(doc) {
+  const item = el("div", undefined, "source-item"),
+    label = el("label"),
+    check = el("input");
+  check.type = "checkbox";
+  check.checked = selected.has(doc.id);
+  check.dataset.selection = "";
+  check.setAttribute("aria-label", `Use ${doc.title}, version ${doc.version}`);
+  if (!doc.eligible) {
+    check.disabled = true;
+    delete check.dataset.selection;
+    selected.delete(doc.id);
+  }
+  check.onchange = () => {
+    if (check.checked && selected.size >= 10) {
+      check.checked = false;
+      msg("status", "Select at most 10 policy versions.", true);
+      return;
+    }
+    if (check.checked) selected.add(doc.id);
+    else selected.delete(doc.id);
+    invalidate();
+    counts();
+  };
+  label.append(check, el("span", `${doc.title} · ${doc.version}`));
+  item.append(
+    label,
+    el(
+      "p",
+      doc.eligible ? "Approved · active" : "Approved · outside validity dates",
+      "small",
+    ),
+  );
+  item.append(button("Inspect text", () => inspect(doc, item)));
+  return item;
+}
+async function inspect(doc, container) {
+  const old = container.querySelector("details");
+  if (old) {
+    old.open = !old.open;
+    return;
+  }
+  const data = await api(`/api/documents/${doc.id}`);
+  const detail = el("details");
+  detail.open = true;
+  detail.append(
+    el("summary", "Document text"),
+    el("pre", data.document.content, "document-text"),
+  );
+  container.append(detail);
+}
+function loadDocuments(append = false) {
+  return paginate(
+    "documents",
+    query("/api/documents", {
+      q: $("document-search").value,
+      status: $("document-filter").value,
+    }),
+    "documents",
+    documentCard,
+    append,
+  );
+}
+function documentCard(doc) {
+  const item = el("article", undefined, "library-row");
+  const top = el("div", undefined, "row-top");
+  top.append(
+    el("h3", `${doc.title} · ${doc.version}`),
+    el("span", doc.status, "badge " + doc.status),
+  );
+  item.append(
+    top,
+    el("p", doc.preview, "small"),
+    el("p", `Added by ${doc.author_email} · ${time(doc.created_at)}`, "small"),
+  );
+  if (doc.valid_from || doc.valid_until)
+    item.append(
+      el(
+        "p",
+        `Effective ${doc.valid_from || "immediately"} · expires ${doc.valid_until || "never"} (UTC)`,
+        "small",
+      ),
+    );
+  const actions = el("div", undefined, "row-actions");
+  actions.append(button("Inspect text", () => inspect(doc, item)));
+  if (admin() && doc.status !== "archived") {
+    if (doc.status === "draft") {
+      if (workspace.require_two_person && doc.user_id === user.id)
+        item.append(
+          el("p", "Awaiting another administrator’s approval.", "small"),
+        );
+      else
+        actions.append(
+          button(
+            "Approve this version",
+            async () => {
+              await api(`/api/documents/${doc.id}/approve`, {});
+              invalidate("Policy library changed. Run a new review.");
+              msg(
+                "doc-status",
+                "Document approved. Select it in Review sources.",
+              );
+              await Promise.all([loadDocuments(), loadSources(), overview()]);
+            },
+            "admin",
+          ),
+        );
+    }
+    actions.append(
+      button(
+        "Archive",
+        async () => {
+          if (
+            !confirm(
+              `Archive ${doc.title}, version ${doc.version}? It will be unavailable for new reviews.`,
+            )
+          )
+            return;
+          await api(`/api/documents/${doc.id}/archive`, {});
+          selected.delete(doc.id);
+          invalidate("Policy archived. Historical evidence is preserved.");
+          msg(
+            "doc-status",
+            "Document archived. Historical evidence is preserved.",
+          );
+          counts();
+          await Promise.all([loadDocuments(), loadSources(), overview()]);
+        },
+        "admin",
+      ),
+    );
+  }
+  item.append(actions);
+  return item;
+}
+$("document-form").onsubmit = (e) => {
+  e.preventDefault();
+  mutate("doc-status", async () => {
+    await api("/api/documents", {
+      title: $("doc-title").value,
+      version: $("doc-version").value,
+      content: $("doc-content").value,
+      sourceUrl: $("doc-url").value,
+      validFrom: $("doc-from").value,
+      validUntil: $("doc-until").value,
+    });
     $("document-form").reset();
-    message("doc-status", "Document saved as a draft. Inspect its text, then approve it below.");
-    await loadDocuments();
-  } catch (error) { message("doc-status", error.message, true); }
-  finally { $("save-document").disabled = false; }
-});
-async function loadDocuments() {
-  const { documents } = await api("/api/documents");
-  selected = new Set([...selected].filter((id) => documents.some((d) => d.id === id && d.status === "approved")));
-  const list = $("documents"); list.replaceChildren();
-  if (!documents.length) { list.append(node("p", "Add a policy to start. Only approved documents are used.", "small")); return; }
-  for (const doc of documents) {
-    const item = node("div", undefined, "document");
-    const label = node("label");
-    const check = node("input"); check.type = "checkbox"; check.disabled = doc.status !== "approved"; check.checked = selected.has(doc.id);
-    check.setAttribute("aria-label", `Use ${doc.title}, version ${doc.version}`);
-    check.addEventListener("change", () => { if (check.checked) selected.add(doc.id); else selected.delete(doc.id); });
-    label.append(check, node("span", `${doc.title} · ${doc.version}`)); item.append(label, node("span", doc.status, `badge ${doc.status}`));
-    const detail = node("details"); detail.append(node("summary", "Inspect document text"), node("pre", doc.content)); item.append(detail);
-    if (doc.status !== "archived") {
-      const actions = node("div", undefined, "doc-actions");
-      for (const action of doc.status === "draft" ? ["approve", "archive"] : ["archive"]) {
-        const button = node("button", action === "approve" ? "Approve this version" : "Archive", "btn btn-ghost btn-sm");
-        button.addEventListener("click", async () => {
-          button.disabled = true;
-          try {
-            await api(`/api/documents/${doc.id}/${action}`, {});
-            if (action === "approve") selected.add(doc.id);
-            message("doc-status", action === "approve" ? "Document approved and selected for review." : "Document archived. Historical reviews keep their evidence.");
-            // A visible result is historical after the library changes. Clear it before another review.
-            $("results").replaceChildren(); message("status", "Document selection changed. Run a new review for the current draft.");
-            await loadDocuments();
-          } catch (error) { message("doc-status", error.message, true); button.disabled = false; }
-        }); actions.append(button);
-      } item.append(actions);
-    }
-    list.append(item);
-  }
-}
-$("go").addEventListener("click", async () => {
-  if (!$("input").value.trim()) { message("status", "Paste a support draft first.", true); return; }
-  if (!selected.size || selected.size > 10) { message("status", "Select 1–10 approved documents first.", true); return; }
-  const draft = $("input").value;
-  const documentIds = [...selected];
-  $("go").disabled = true; $("input").disabled = true;
-  $("load-example").disabled = true;
-  $("results").replaceChildren(); message("status", "Reviewing each sentence against your selected documents…");
+    counts();
+    msg(
+      "doc-status",
+      "Document saved as a draft. Inspect its text before approval.",
+    );
+    await Promise.all([loadDocuments(), overview()]);
+  });
+};
+$("document-file").onchange = async () => {
+  const file = $("document-file").files[0];
+  if (!file) return;
   try {
-    const data = await api("/api/reviews", { draft, documentIds });
-    if ($("input").value !== draft || JSON.stringify([...selected].sort()) !== JSON.stringify([...documentIds].sort())) {
-      message("status", "Review saved to history. The draft or document selection changed while it was running; run a new review.");
-      await loadHistory(); return;
-    }
-    render(data.review); message("status", "Review saved privately. A person must decide what to send.");
-    await loadHistory();
-  } catch (error) { message("status", error.message, true); }
-  finally { $("go").disabled = false; $("input").disabled = false; $("load-example").disabled = false; }
-});
-// Prevent a result for an old draft or selection from appearing current.
-$("input").addEventListener("input", () => { $("results").replaceChildren(); message("status", "Draft changed. Run a new review."); });
-$("documents").addEventListener("change", () => { $("results").replaceChildren(); message("status", "Document selection changed. Run a new review."); });
-$("load-example").addEventListener("click", () => {
-  $("doc-title").value = "Example export policy"; $("doc-version").value = "pilot-1"; $("doc-url").value = "";
-  $("doc-content").value = "Starter plans include 100 exports per month. Unlimited exports are available on the Enterprise plan. Refund requests must be submitted within 30 days of purchase.";
-  $("input").value = "All plans include unlimited exports. Refund requests must be submitted within 30 days of purchase.";
-  $("results").replaceChildren(); message("doc-status", "Example loaded. Save and approve this sample document, then review the draft."); message("status", "Example draft loaded. This is sample policy data.");
-});
-function quote(evidence) {
-  const block = node("blockquote", evidence.quote);
-  const cite = node("cite", `${evidence.title} · version ${evidence.version} · ${evidence.contentHash.slice(0, 12)}`);
-  if (evidence.sourceUrl) {
+    if (!/\.(txt|md)$/i.test(file.name) || file.size > 80000)
+      throw new Error("Choose a text or Markdown file under 80 KB.");
+    const text = await file.text();
+    if (text.length > 20000)
+      throw new Error("Document exceeds 20,000 characters.");
+    $("doc-content").value = text;
+    if (!$("doc-title").value)
+      $("doc-title").value = file.name
+        .replace(/\.(txt|md)$/i, "")
+        .slice(0, 120);
+    counts();
+    msg(
+      "doc-status",
+      "Text imported. Check its scope and exceptions before saving.",
+    );
+  } catch (e) {
+    msg("doc-status", e.message, true);
+  }
+};
+$("load-example").onclick = () => {
+  $("input").value =
+    "All plans include unlimited exports. Refund requests must be submitted within 30 days of purchase.";
+  $("doc-title").value = "Example export policy";
+  $("doc-version").value = "pilot-1";
+  $("doc-content").value =
+    "Starter plans include 100 exports per month. Unlimited exports are available on the Enterprise plan. Refund requests must be submitted within 30 days of purchase.";
+  counts();
+  invalidate(
+    "Example loaded. Save the sample policy in Documents, approve it and select it as a source.",
+  );
+  view("documents");
+};
+function loadHistory(append = false) {
+  return paginate(
+    "history",
+    query("/api/reviews", {
+      q: $("history-search").value,
+      decision: $("history-filter").value,
+    }),
+    "reviews",
+    reviewCard,
+    append,
+  );
+}
+function reviewCard(item) {
+  const n = el("a", undefined, "queue-row");
+  n.href = `#review=${item.id}`;
+  n.addEventListener("click", (event) => {
+    event.preventDefault();
+    if (busy) return;
+    history.pushState(null, "", n.href);
+    openReview(item.id).catch((e) => msg("status", e.message, true));
+  });
+  n.append(
+    el("p", item.preview),
+    el("span", item.decision, "badge " + item.decision),
+    el(
+      "small",
+      `${labels[item.status]} · ${item.author_email} · ${time(item.created_at)}`,
+    ),
+  );
+  return n;
+}
+function quote(e) {
+  const n = el("blockquote", e.quote),
+    cite = el(
+      "cite",
+      `${e.title} · ${e.version} · ${e.contentHash.slice(0, 12)}`,
+    );
+  if (e.sourceUrl) {
     try {
-      const url = new URL(evidence.sourceUrl);
-      if (["https:", "http:"].includes(url.protocol)) {
-        const link = node("a", " Open source"); link.href = url.href; link.target = "_blank"; link.rel = "noopener noreferrer"; cite.append(link);
+      const u = new URL(e.sourceUrl);
+      if (["https:", "http:"].includes(u.protocol)) {
+        const a = el("a", " Open source");
+        a.href = u.href;
+        a.target = "_blank";
+        a.rel = "noopener noreferrer";
+        cite.append(a);
       }
-    } catch { /* Display evidence without an invalid source link. */ }
-  }
-  block.append(cite); return block;
-}
-function render(review) {
-  const output = $("results"); output.replaceChildren();
-  const summary = node("div", undefined, "review-summary");
-  summary.append(node("span", labels[review.status], `badge ${review.status}`), node("p", review.summary));
-  const sources = node("details"); sources.append(node("summary", "Document versions used"));
-  const list = node("ul", undefined, "source-list");
-  for (const doc of review.documents) list.append(node("li", `${doc.title} · ${doc.version} · ${doc.contentHash.slice(0, 12)}`));
-  sources.append(list); summary.append(sources); output.append(summary);
-  for (const receipt of review.receipts) {
-    const card = node("article", undefined, "receipt");
-    card.append(node("span", labels[receipt.verdict], `badge ${receipt.verdict}`), node("h3", receipt.statement));
-    for (const e of receipt.evidence) card.append(quote(e));
-    if (receipt.counterEvidence.length) {
-      const counter = node("div", undefined, "counter"); counter.append(node("strong", "Contradicting evidence"));
-      for (const e of receipt.counterEvidence) counter.append(quote(e)); card.append(counter);
+    } catch {
+      /* Ignore malformed legacy URLs. */
     }
-    card.append(node("p", receipt.reviewNote)); output.append(card);
   }
+  n.append(cite);
+  return n;
 }
-async function loadHistory() {
-  const { reviews } = await api("/api/reviews");
-  const history = $("history"); history.replaceChildren();
-  if (!reviews.length) history.append(node("p", "Your reviewed drafts will appear here.", "small"));
-  for (const item of reviews) {
-    const link = node("a", item.preview, "hist-item"); link.href = `#review=${item.id}`;
-    link.append(node("small", new Date(`${item.created_at}Z`).toLocaleString())); history.append(link);
+function render(data) {
+  current = data;
+  const output = $("results");
+  output.replaceChildren();
+  const summary = el("div", undefined, "review-summary");
+  summary.append(
+    el("span", labels[data.review.status], "badge " + data.review.status),
+    el("p", data.review.summary),
+  );
+  const sources = el("details");
+  sources.append(el("summary", "Document versions used"));
+  const list = el("ul", undefined, "source-list");
+  for (const d of data.review.documents)
+    list.append(
+      el("li", `${d.title} · ${d.version} · ${d.contentHash.slice(0, 12)}`),
+    );
+  sources.append(list);
+  summary.append(sources);
+  output.append(summary);
+  for (const r of data.review.receipts) {
+    const card = el("article", undefined, "receipt");
+    card.append(
+      el("span", labels[r.verdict], "badge " + r.verdict),
+      el("h3", r.statement),
+    );
+    for (const e of r.evidence) card.append(quote(e));
+    if (r.counterEvidence.length) {
+      const n = el("div", undefined, "counter");
+      n.append(el("strong", "Contradicting evidence"));
+      for (const e of r.counterEvidence) n.append(quote(e));
+      card.append(n);
+    }
+    card.append(el("p", r.reviewNote));
+    output.append(card);
   }
+  const decision = el("section", undefined, "decision-card");
+  decision.append(
+    el("h3", "Human decision"),
+    el("p", `Decision: ${data.decision} · revision ${data.revision}`),
+  );
+  if (data.decisionNote) decision.append(el("p", data.decisionNote));
+  if (!data.policiesCurrent)
+    decision.append(
+      el(
+        "p",
+        "A source policy is no longer active. Run a new review before approving.",
+        "error",
+      ),
+    );
+  const download = el("a", "Export evidence JSON", "btn btn-ghost btn-sm");
+  download.href = "#";
+  download.onclick = async (e) => {
+    e.preventDefault();
+    try {
+      const record = await api(`/api/reviews/${data.id}/export`);
+      const url = URL.createObjectURL(
+        new Blob([JSON.stringify(record, null, 2)], {
+          type: "application/json",
+        }),
+      );
+      const a = el("a");
+      a.href = url;
+      a.download = `veriq-review-${data.id}.json`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (e) {
+      msg("status", e.message, true);
+    }
+  };
+  decision.append(download);
+  if (writer()) {
+    const note = el("textarea");
+    note.id = "decision-note";
+    note.maxLength = 2000;
+    note.placeholder =
+      "Record why this draft is approved or rejected (at least 5 characters).";
+    const label = el("label", "Decision note");
+    label.htmlFor = note.id;
+    decision.append(label, note);
+    for (const value of ["approved", "rejected"]) {
+      if (
+        value === "approved" &&
+        (data.review.status !== "ready_for_review" || !data.policiesCurrent)
+      )
+        continue;
+      decision.append(
+        button(
+          value === "approved" ? "Approve draft" : "Reject draft",
+          async () => {
+            await api(`/api/reviews/${data.id}/decision`, {
+              decision: value,
+              note: note.value,
+              expectedRevision: data.revision,
+            });
+            await openReview(data.id);
+            await Promise.all([loadHistory(), overview()]);
+          },
+          "write",
+        ),
+      );
+    }
+  }
+  output.append(decision);
+  controls();
 }
-async function loadReview() {
+async function openReview(id) {
+  const version = epoch,
+    sequence = ++openSequence;
+  const data = await api(`/api/reviews/${id}`);
+  if (version !== epoch || sequence !== openSequence) return;
+  view("review", false);
+  $("input").value = data.draft;
+  counts();
+  render(data);
+  msg(
+    "status",
+    "Saved review. Evidence reflects the document versions checked; the decision is recorded separately.",
+  );
+}
+addEventListener("hashchange", () => {
   const id = location.hash.match(/^#review=([a-f0-9-]{36})$/)?.[1];
-  if (!id) return;
-  try {
-    const data = await api(`/api/reviews/${id}`);
-    $("input").value = data.draft; render(data.review);
-    message("status", "Historical review: these document versions were approved when checked. Run a new review against current policies before sending.");
-  } catch (error) { $("results").replaceChildren(); message("status", error.message, true); }
+  if (id && !busy) openReview(id).catch((e) => msg("status", e.message, true));
+});
+$("go").onclick = () =>
+  mutate("status", async () => {
+    openSequence++;
+    if (!$("input").value.trim())
+      throw new Error("Paste a customer reply first.");
+    if (!selected.size)
+      throw new Error("Select current approved documents first.");
+    const payload = {
+        draft: $("input").value,
+        documentIds: [...selected].sort(),
+      },
+      fingerprint = JSON.stringify(payload);
+    if (retry?.fingerprint !== fingerprint)
+      retry = { fingerprint, key: crypto.randomUUID() };
+    $("results").replaceChildren();
+    current = null;
+    msg(
+      "status",
+      "Reviewing each sentence against the full selected policies…",
+    );
+    const data = await api("/api/reviews", payload, retry.key);
+    await openReview(data.id);
+    retry = null;
+    await Promise.all([loadHistory(), overview()]);
+  });
+async function loadMembers() {
+  const sequence = ++memberSequence;
+  $("members").replaceChildren(el("p", "Loading members…", "small"));
+  const version = epoch;
+  const data = await api(`/api/workspaces/${workspace.id}/members`);
+  if (version !== epoch || sequence !== memberSequence) return;
+  $("members").replaceChildren();
+  for (const m of data.members) {
+    const row = el("div", undefined, "member-row");
+    row.append(el("strong", m.email), el("span", m.role, "badge"));
+    if (
+      !workspace.is_personal &&
+      m.user_id !== user.id &&
+      m.role !== "owner" &&
+      (workspace.role === "owner" || m.role !== "admin")
+    ) {
+      const select = el("select");
+      select.setAttribute("aria-label", `Role for ${m.email}`);
+      for (const role of workspace.role === "owner"
+        ? ["admin", "reviewer", "viewer"]
+        : ["reviewer", "viewer"]) {
+        const o = el("option", role);
+        o.value = role;
+        select.append(o);
+      }
+      select.value = m.role;
+      row.append(
+        select,
+        button(
+          "Save role",
+          async () => {
+            await api(`/api/workspaces/${workspace.id}/members/${m.user_id}`, {
+              role: select.value,
+            });
+            await loadMembers();
+            msg("team-status", "Member role updated.");
+          },
+          "admin",
+        ),
+        button(
+          "Remove",
+          async () => {
+            if (!confirm(`Remove ${m.email} from this workspace?`)) return;
+            await api(`/api/workspaces/${workspace.id}/members/${m.user_id}`, {
+              remove: true,
+            });
+            await Promise.all([loadMembers(), overview()]);
+          },
+          "admin",
+        ),
+      );
+    }
+    $("members").append(row);
+  }
+  controls();
 }
-addEventListener("hashchange", loadReview);
+$("member-form").onsubmit = (e) => {
+  e.preventDefault();
+  mutate("team-status", async () => {
+    await api(`/api/workspaces/${workspace.id}/members`, {
+      email: $("member-email").value,
+      role: $("member-role").value,
+    });
+    $("member-form").reset();
+    msg(
+      "team-status",
+      "Member added. They can select this workspace after signing in.",
+    );
+    await Promise.all([loadMembers(), overview()]);
+  });
+};
+function loadAudit(append = false) {
+  return paginate(
+    "audit-events",
+    `/api/workspaces/${workspace.id}/audit`,
+    "events",
+    (item) => {
+      const n = el("article", undefined, "event-row");
+      n.append(
+        el("strong", item.action.replaceAll(".", " · ")),
+        el("p", `${item.actor_email} · ${time(item.created_at)}`, "small"),
+        el("p", `Object: ${item.object_id}`, "small"),
+      );
+      const d = el("details");
+      d.append(
+        el("summary", "Event details"),
+        el("pre", JSON.stringify(JSON.parse(item.metadata_json), null, 2)),
+      );
+      n.append(d);
+      return n;
+    },
+    append,
+  );
+}
+for (const [id, loader] of [
+  ["sources", loadSources],
+  ["documents", loadDocuments],
+  ["history", loadHistory],
+  ["audit-events", loadAudit],
+])
+  $(`more-${id}`).onclick = () =>
+    loader(true).catch((e) => msg("global-status", e.message, true));
+function debounce(id, fn) {
+  let timer;
+  $(id).addEventListener("input", () => {
+    clearTimeout(timer);
+    timer = setTimeout(
+      () => fn().catch((e) => msg("global-status", e.message, true)),
+      250,
+    );
+  });
+}
+for (const [id, fn] of [
+  ["source-search", loadSources],
+  ["document-search", loadDocuments],
+  ["history-search", loadHistory],
+])
+  debounce(id, fn);
+$("document-filter").onchange = () =>
+  loadDocuments().catch((e) => msg("global-status", e.message, true));
+$("history-filter").onchange = () =>
+  loadHistory().catch((e) => msg("global-status", e.message, true));
+$("refresh-history").onclick = () =>
+  loadHistory().catch((e) => msg("global-status", e.message, true));
+$("refresh-audit").onclick = () =>
+  loadAudit().catch((e) => msg("global-status", e.message, true));
+$("new-workspace").onclick = () => {
+  $("workspace-status").textContent = "";
+  $("workspace-dialog").showModal();
+};
+$("close-workspace").onclick = () => $("workspace-dialog").close();
+$("workspace-form").onsubmit = (e) => {
+  e.preventDefault();
+  mutate("workspace-status", async () => {
+    const data = await api("/api/workspaces", {
+      name: $("new-workspace-name").value,
+    });
+    await loadWorkspaces(data.id);
+    $("workspace-dialog").close();
+    $("workspace-form").reset();
+  });
+};
+$("logout").onclick = () =>
+  mutate("global-status", async () => {
+    await api("/api/auth/logout", {});
+    location.href = "/";
+  });
+$("revoke-sessions").onclick = () =>
+  mutate("global-status", async () => {
+    if (!confirm("Sign out of all sessions on every device?")) return;
+    await api("/api/auth/revoke-sessions", {});
+    location.href = "/login.html";
+  });
 (async () => {
-  try { const { user } = await api("/api/auth/me"); $("who").textContent = user.email;
-    await loadDocuments(); await loadHistory(); await loadReview(); }
-  catch (error) { message("status", error.message, true); }
+  try {
+    const hash = location.hash;
+    user = (await api("/api/auth/me")).user;
+    $("who").textContent = user.email;
+    $("avatar").textContent = user.email[0].toUpperCase();
+    await loadWorkspaces();
+    const id = hash.match(/^#review=([a-f0-9-]{36})$/)?.[1];
+    if (id) await openReview(id);
+  } catch (e) {
+    msg("global-status", e.message, true);
+  }
 })();

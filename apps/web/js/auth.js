@@ -2,14 +2,21 @@
 const API = window.VERIQ_API;
 
 const $ = (id) => document.getElementById(id);
-const mode = new URLSearchParams(location.search).get("mode") === "signup" ? "signup" : "login";
+const mode =
+  new URLSearchParams(location.search).get("mode") === "signup"
+    ? "signup"
+    : "login";
 
 if (mode === "signup") {
   $("title").textContent = "Create your account";
-  $("subtitle").textContent = "Create a private document library for support draft reviews.";
+  $("subtitle").textContent =
+    "Review customer replies in your personal or team workspace.";
   $("submit").textContent = "Create account";
   $("password").setAttribute("autocomplete", "new-password");
-  $("switch").innerHTML = 'Already have an account? <a href="/login.html">Log in</a>';
+  $("password").minLength = 12;
+  $("password").maxLength = 128;
+  $("switch").innerHTML =
+    'Already have an account? <a href="/login.html">Log in</a>';
 }
 
 async function api(path, body) {
@@ -31,8 +38,13 @@ $("form").addEventListener("submit", async (e) => {
   $("err").textContent = "";
   $("submit").disabled = true;
   try {
-    if (password.length < 8) throw new Error("Password must be at least 8 characters.");
-    await api(mode === "signup" ? "/api/auth/signup" : "/api/auth/login", { email, password });
+    const minimum = mode === "signup" ? 12 : 8;
+    if (password.length < minimum)
+      throw new Error(`Password must be at least ${minimum} characters.`);
+    await api(mode === "signup" ? "/api/auth/signup" : "/api/auth/login", {
+      email,
+      password,
+    });
     location.href = "/app.html";
   } catch (err) {
     $("err").textContent = err.message;
@@ -42,5 +54,7 @@ $("form").addEventListener("submit", async (e) => {
 });
 
 fetch(`${API}/api/auth/me`, { credentials: "include" })
-  .then((r) => { if (r.ok) location.href = "/app.html"; })
+  .then((r) => {
+    if (r.ok) location.href = "/app.html";
+  })
   .catch(() => {});

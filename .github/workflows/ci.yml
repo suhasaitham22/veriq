@@ -1,7 +1,7 @@
 name: CI
 on:
   push:
-    branches: [main, feat/support-draft-review]
+    branches: [main, "feat/**"]
   pull_request:
 permissions:
   contents: read
@@ -16,6 +16,7 @@ jobs:
           node-version: '24'
           cache: npm
       - run: npm ci
+      - run: npm run format:check
       - run: npm run check
       - run: npm run build:api
       - run: npx playwright install --with-deps chromium

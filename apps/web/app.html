@@ -1,10 +1,389 @@
-<!DOCTYPE html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Support review — Veriq</title><link rel="stylesheet" href="css/styles.css"></head>
-<body><nav class="nav"><div class="nav-inner"><a class="logo" href="/">Veriq</a><div class="user-chip"><span id="who"></span><button id="logout">Log out</button></div></div></nav>
-<main class="dash"><div class="dash-head"><p class="eyebrow">Evidence before send</p><h1>Review a support draft</h1><p>Select approved policies, paste the reply, and inspect the evidence. Reviews and documents are private to your account.</p></div>
-<div class="workspace"><aside class="card"><h2>Document library</h2><p class="small">Save an immutable version, then approve it. Archive outdated versions so they cannot be used in new reviews.</p>
-<form id="document-form"><label for="doc-title">Document title</label><input id="doc-title" maxlength="120" required placeholder="Refund policy"><label for="doc-version">Version</label><input id="doc-version" maxlength="60" required placeholder="2026-10"><label for="doc-url">Source link (optional)</label><input id="doc-url" type="url" maxlength="2000" placeholder="https://docs.example.com/refunds"><label for="doc-content">Approved policy text</label><textarea id="doc-content" maxlength="20000" required placeholder="Paste the policy text, including eligibility conditions and exceptions."></textarea><button class="btn btn-ghost" id="save-document" type="submit">Save draft document</button></form>
-<div id="doc-status" role="status" aria-live="polite"></div><h3 style="margin-top:24px">Select documents for this review</h3><div id="documents"></div></aside>
-<section><div class="card"><div class="draft-header"><h2>Customer reply draft</h2><button class="btn btn-ghost btn-sm" id="load-example">Load pilot example</button></div><p class="small">Use up to 12 sentences and 3,000 characters. Include the applicable product, plan, and policy conditions. Account-specific promises require additional evidence.</p><label for="input">Reply to review</label><textarea id="input" maxlength="3000" placeholder="Paste the AI-generated reply you plan to send…"></textarea><div class="actions"><button class="btn" id="go">Review against selected documents</button></div><div id="status" role="status" aria-live="polite"></div><div id="results"></div></div>
-<div class="hist card"><h2>Recent private reviews</h2><div id="history"></div></div></section></div>
-</main><script src="config.js"></script><script src="app.js"></script></body></html>
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Workspace — Veriq</title>
+    <link rel="stylesheet" href="css/styles.css" />
+    <link rel="stylesheet" href="css/workspace.css" />
+  </head>
+  <body class="workspace-app">
+    <aside class="sidebar">
+      <a class="brand" href="/"
+        ><span class="brand-mark" aria-hidden="true">V</span> Veriq<span
+          class="brand-caption"
+          >SUPPORT ASSURANCE</span
+        ></a
+      >
+      <div class="workspace-picker">
+        <label for="workspace-select">Workspace</label
+        ><select id="workspace-select"></select>
+        <div class="workspace-meta">
+          <span id="role-chip"></span
+          ><button id="new-workspace" class="sidebar-action">+ New team</button>
+        </div>
+      </div>
+      <nav aria-label="Workspace navigation" id="workspace-nav">
+        <button data-view="review" aria-current="page">
+          <span aria-hidden="true">◈</span> Review desk
+        </button>
+        <button data-view="documents">
+          <span aria-hidden="true">▤</span> Documents
+        </button>
+        <button data-view="team">
+          <span aria-hidden="true">◇</span> Team &amp; access
+        </button>
+        <button data-view="audit">
+          <span aria-hidden="true">◷</span> Audit trail
+        </button>
+      </nav>
+      <div class="sidebar-footer">
+        <div class="avatar" aria-hidden="true" id="avatar">V</div>
+        <div>
+          <span id="who"></span>
+          <div>
+            <button id="logout">Log out</button
+            ><button id="revoke-sessions">All sessions</button>
+          </div>
+        </div>
+      </div>
+    </aside>
+    <div class="app-main">
+      <header class="app-topbar">
+        <span id="workspace-name">Loading workspace…</span
+        ><span class="privacy-tag">● Private workspace</span>
+      </header>
+      <main class="app-content">
+        <div class="page-heading">
+          <div>
+            <p class="eyebrow">EVIDENCE BEFORE SEND</p>
+            <h1 id="page-title">Review desk</h1>
+            <p id="page-description">
+              Check support answers against the policies your team approves.
+            </p>
+          </div>
+          <span id="approval-mode" class="subtle-chip"></span>
+        </div>
+        <div id="global-status" role="status" aria-live="polite"></div>
+        <section class="metrics" aria-label="Workspace overview">
+          <div>
+            <span>Active policies</span><strong id="metric-active">—</strong>
+          </div>
+          <div>
+            <span>Awaiting document approval</span
+            ><strong id="metric-drafts">—</strong>
+          </div>
+          <div>
+            <span>Pending review decisions</span
+            ><strong id="metric-pending">—</strong>
+          </div>
+          <div>
+            <span>Workspace members</span><strong id="metric-members">—</strong>
+          </div>
+        </section>
+
+        <section id="view-review" class="view-panel">
+          <div class="review-layout">
+            <div class="review-primary">
+              <section class="card composer">
+                <div class="section-title">
+                  <div>
+                    <h2>Customer reply draft</h2>
+                    <p class="small">
+                      Review before sending. Customer-specific actions need
+                      account evidence.
+                    </p>
+                  </div>
+                  <button id="load-example" class="btn btn-ghost btn-sm">
+                    Load example
+                  </button>
+                </div>
+                <label class="sr-only" for="input">Reply to review</label
+                ><textarea
+                  id="input"
+                  maxlength="3000"
+                  placeholder="Paste the AI-generated reply you plan to send to a customer…"
+                ></textarea>
+                <div class="composer-footer">
+                  <span id="draft-count" class="small"
+                    >0 / 3,000 characters · up to 12 sentences</span
+                  ><button id="go" class="btn" data-mutation>
+                    Review draft <span aria-hidden="true">→</span>
+                  </button>
+                </div>
+                <div id="status" role="status" aria-live="polite"></div>
+                <div id="results"></div>
+              </section>
+              <section class="card review-history">
+                <div class="section-title">
+                  <div>
+                    <h2>Review queue</h2>
+                    <p class="small">
+                      Saved evidence and human decisions, shared within this
+                      workspace.
+                    </p>
+                  </div>
+                  <button id="refresh-history" class="btn btn-ghost btn-sm">
+                    Refresh
+                  </button>
+                </div>
+                <div class="filter-row">
+                  <label class="sr-only" for="history-search"
+                    >Search reviews</label
+                  ><input
+                    id="history-search"
+                    type="search"
+                    placeholder="Search draft text"
+                  /><label class="sr-only" for="history-filter"
+                    >Filter decisions</label
+                  ><select id="history-filter">
+                    <option value="">All decisions</option>
+                    <option value="pending">Pending</option>
+                    <option value="approved">Approved</option>
+                    <option value="rejected">Rejected</option>
+                  </select>
+                </div>
+                <div id="history"></div>
+                <button id="more-history" class="btn btn-ghost btn-sm" hidden>
+                  Load more reviews
+                </button>
+              </section>
+            </div>
+            <aside class="card policy-selector">
+              <div class="section-title">
+                <h2>Review sources</h2>
+                <span id="selected-count" class="subtle-chip">0 selected</span>
+              </div>
+              <p class="small">
+                Choose current approved documents for the relevant product and
+                plan. Select up to 10.
+              </p>
+              <label class="sr-only" for="source-search"
+                >Search approved documents</label
+              ><input
+                id="source-search"
+                type="search"
+                placeholder="Find a policy or product…"
+              />
+              <div id="sources"></div>
+              <button id="more-sources" class="btn btn-ghost btn-sm" hidden>
+                Load more policies
+              </button>
+              <p class="source-note">
+                Full text of selected documents is checked. A human makes the
+                final sending decision.
+              </p>
+              <button class="text-button" id="open-documents">
+                Manage document library →
+              </button>
+            </aside>
+          </div>
+        </section>
+
+        <section id="view-documents" class="view-panel" hidden>
+          <div class="document-layout">
+            <section class="card">
+              <div class="section-title">
+                <div>
+                  <h2>Document library</h2>
+                  <p class="small">
+                    Versioned policy text with explicit approval and validity
+                    dates.
+                  </p>
+                </div>
+              </div>
+              <div class="filter-row">
+                <label class="sr-only" for="document-search"
+                  >Search documents</label
+                ><input
+                  id="document-search"
+                  type="search"
+                  placeholder="Search title or version"
+                /><label class="sr-only" for="document-filter"
+                  >Filter document status</label
+                ><select id="document-filter">
+                  <option value="">All versions</option>
+                  <option value="draft">Draft</option>
+                  <option value="approved">Approved</option>
+                  <option value="archived">Archived</option>
+                </select>
+              </div>
+              <div id="documents"></div>
+              <button id="more-documents" class="btn btn-ghost btn-sm" hidden>
+                Load more documents
+              </button>
+            </section>
+            <section class="card" id="document-editor">
+              <h2>Add a document version</h2>
+              <p class="small" id="document-approval-help">
+                Text and metadata are immutable after saving. Save changes as a
+                new version.
+              </p>
+              <form id="document-form">
+                <fieldset id="document-fields">
+                  <label for="doc-title">Document title</label
+                  ><input
+                    id="doc-title"
+                    maxlength="120"
+                    required
+                    placeholder="Refund policy"
+                  />
+                  <div class="two-fields">
+                    <div>
+                      <label for="doc-version">Version</label
+                      ><input
+                        id="doc-version"
+                        maxlength="60"
+                        required
+                        placeholder="2026-10"
+                      />
+                    </div>
+                    <div>
+                      <label for="document-file">Import text or Markdown</label
+                      ><input
+                        id="document-file"
+                        type="file"
+                        accept=".txt,.md,text/plain,text/markdown"
+                      />
+                    </div>
+                  </div>
+                  <label for="doc-url">Source link (optional)</label
+                  ><input
+                    id="doc-url"
+                    type="url"
+                    maxlength="2000"
+                    placeholder="https://docs.example.com/refunds"
+                  />
+                  <div class="two-fields">
+                    <div>
+                      <label for="doc-from">Effective from (UTC)</label
+                      ><input id="doc-from" type="date" />
+                    </div>
+                    <div>
+                      <label for="doc-until">Expires on (UTC)</label
+                      ><input id="doc-until" type="date" />
+                    </div>
+                  </div>
+                  <label for="doc-content">Approved policy text</label
+                  ><textarea
+                    id="doc-content"
+                    maxlength="20000"
+                    required
+                    placeholder="Include product scope, eligibility conditions and exceptions."
+                  ></textarea>
+                  <div class="composer-footer">
+                    <span class="small" id="document-count"
+                      >0 / 20,000 characters</span
+                    ><button
+                      id="save-document"
+                      class="btn"
+                      type="submit"
+                      data-mutation
+                    >
+                      Save draft document
+                    </button>
+                  </div>
+                </fieldset>
+              </form>
+              <div id="doc-status" role="status" aria-live="polite"></div>
+            </section>
+          </div>
+        </section>
+
+        <section id="view-team" class="view-panel" hidden>
+          <div class="document-layout">
+            <section class="card">
+              <h2>People &amp; permissions</h2>
+              <p class="small">
+                Owners manage administrators. Admins approve documents and
+                manage reviewers. Reviewers create documents and review drafts.
+                Viewers have read-only access.
+              </p>
+              <div id="members"></div>
+            </section>
+            <section class="card">
+              <h2>Add a registered teammate</h2>
+              <p class="small">
+                Your teammate must create an account first. Adding a member
+                grants access to this workspace’s policies and reviews. No
+                invitation email is sent.
+              </p>
+              <form id="member-form">
+                <fieldset id="member-fields">
+                  <label for="member-email">Member email</label
+                  ><input id="member-email" type="email" required /><label
+                    for="member-role"
+                    >Role</label
+                  ><select id="member-role">
+                    <option value="reviewer">Reviewer</option>
+                    <option value="viewer">Viewer</option>
+                    <option value="admin">Admin</option></select
+                  ><button
+                    class="btn form-submit"
+                    id="add-member"
+                    data-mutation
+                  >
+                    Add member
+                  </button>
+                </fieldset>
+              </form>
+              <div id="team-status" role="status" aria-live="polite"></div>
+            </section>
+          </div>
+        </section>
+
+        <section id="view-audit" class="view-panel" hidden>
+          <section class="card">
+            <div class="section-title">
+              <div>
+                <h2>Workspace audit trail</h2>
+                <p class="small">
+                  Document approvals, membership changes and human review
+                  decisions. Events commit with their associated changes.
+                </p>
+              </div>
+              <button id="refresh-audit" class="btn btn-ghost btn-sm">
+                Refresh
+              </button>
+            </div>
+            <div id="audit-events"></div>
+            <button id="more-audit-events" class="btn btn-ghost btn-sm" hidden>
+              Load more events
+            </button>
+          </section>
+        </section>
+      </main>
+    </div>
+    <dialog id="workspace-dialog">
+      <form id="workspace-form">
+        <div class="section-title">
+          <h2>Create a team workspace</h2>
+          <button
+            type="button"
+            class="text-button"
+            id="close-workspace"
+            aria-label="Close workspace dialog"
+          >
+            ✕
+          </button>
+        </div>
+        <p class="small">
+          Team workspaces require a different administrator to approve each
+          document. Add at least one additional admin to begin.
+        </p>
+        <label for="new-workspace-name">Workspace name</label
+        ><input
+          id="new-workspace-name"
+          maxlength="100"
+          required
+          placeholder="Acme Support"
+        /><button class="btn form-submit" data-mutation>
+          Create workspace
+        </button>
+        <div id="workspace-status" role="status"></div>
+      </form>
+    </dialog>
+    <script src="config.js"></script>
+    <script type="module" src="app.js"></script>
+  </body>
+</html>
