@@ -187,7 +187,7 @@ export async function evidenceRoutes(
       if (!media)
         throw new HttpError(
           503,
-          "Private media storage is not configured. An administrator must enable the MEDIA R2 binding.",
+          "Media uploads are disabled by the free-only policy. Local emulator uploads require LOCAL_MEDIA_DEMO and a local MEDIA binding. Save a link instead.",
           "MEDIA_UNAVAILABLE",
         );
       if (!/^multipart\/form-data;/.test(req.headers.get("content-type") ?? ""))

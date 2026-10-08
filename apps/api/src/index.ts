@@ -16,6 +16,10 @@ export interface Env {
   DB: D1Database;
   CACHE?: KVNamespace;
   WEB_ORIGIN?: string;
+  /** Operator attestation after checking the current Cloudflare Workers Free plan. */
+  WORKERS_FREE_PLAN_CONFIRMED?: string;
+  /** Local emulator only; production R2 has no hard zero-cost cap. */
+  LOCAL_MEDIA_DEMO?: string;
 }
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
@@ -23,6 +27,13 @@ export default {
       origin = req.headers.get("origin"),
       allowed = env.WEB_ORIGIN ?? "https://veriq-1q9.pages.dev",
       requestId = crypto.randomUUID();
+    const aiAvailable = env.WORKERS_FREE_PLAN_CONFIRMED === "true";
+    const media =
+      env.LOCAL_MEDIA_DEMO === "true" &&
+      url.protocol === "http:" &&
+      ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)
+        ? env.MEDIA
+        : undefined;
     const headers: Record<string, string> = {
       ...(origin === allowed ? { "access-control-allow-origin": allowed } : {}),
       "access-control-allow-credentials": "true",
@@ -55,7 +66,7 @@ export default {
           {
             ok: true,
             service: "veriq-api",
-            v: 6,
+            v: 7,
             mode: "support_review",
             features: [
               "workspaces",
@@ -63,8 +74,11 @@ export default {
               "sample_demo",
               "evidence_store",
               "ai_chat",
+              "free_tier_policy",
             ],
-            mediaAvailable: !!env.MEDIA,
+            billingMode: "free_only",
+            aiAvailable,
+            mediaAvailable: !!media,
           },
           200,
           headers,
@@ -116,11 +130,21 @@ export default {
         user,
         req.headers.get("x-workspace-id"),
       );
+      if (
+        req.method === "POST" &&
+        ["/api/reviews", "/api/chat"].includes(url.pathname) &&
+        !aiAvailable
+      )
+        throw new HttpError(
+          503,
+          "AI is paused until an administrator verifies the Cloudflare Workers Free plan. Saved documents, links and history remain available.",
+          "FREE_PLAN_UNCONFIRMED",
+        );
       const result =
         (await documentRoutes(req, url, scope)) ??
         (await reviewRoutes(req, url, scope, env.AI)) ??
         (await pilotRoutes(req, url, scope)) ??
-        (await evidenceRoutes(req, url, scope, env.MEDIA)) ??
+        (await evidenceRoutes(req, url, scope, media)) ??
         (await chatRoutes(req, url, scope, env.AI));
       if (result instanceof Response) {
         const h = new Headers(result.headers);

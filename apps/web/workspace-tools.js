@@ -10,7 +10,7 @@ export function workspaceTools(ctx) {
   const lists = new Map();
   function controls(busy) {
     $("evidence-fields").disabled = busy || !writer();
-    $("chat-fields").disabled = busy || !writer();
+    $("chat-fields").disabled = busy || !writer() || !ctx.aiAvailable();
     $("evidence-file").disabled = busy || !writer() || !mediaAvailable;
     $("evidence-kind").querySelector('[value="media"]').disabled =
       !mediaAvailable;
@@ -365,7 +365,7 @@ export function workspaceTools(ctx) {
       mediaAvailable = value;
       $("media-availability").textContent = value
         ? "Private file storage available. Up to 5 MiB per file; 100 MiB per workspace."
-        : "File uploads are unavailable until an administrator configures private Cloudflare R2 storage. Links can be saved now.";
+        : "Production media uploads are disabled under the free-only policy. Save a link to an approved company resource instead. File uploads are available only in the local emulator demo.";
     },
     async view(name) {
       if (name === "evidence") await loadEvidence();

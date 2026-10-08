@@ -51,6 +51,10 @@ Reference limits are enforced in insertion SQL: 500 items and 100 MiB/workspace,
 
 R2 keys remain server-side. Downloads resolve membership, obtain the private object and recheck membership before returning non-cacheable bytes with forced attachment disposition and the API's restrictive security headers. There are no public bucket URLs. Bookmarks are never fetched by the server, and their fingerprints cover saved URL/context, not changing remote page content. Attachments require an approved reference and review in the same workspace, with writer permissions checked inside the transaction, capped at 20 per review. Archival preserves historical attachments. Neither file/reference approval nor attachment changes machine findings or enables a blocked human approval.
 
+## Free-only deployment guard
+
+The [free-only policy](FREE_TIER_POLICY.md) defaults AI generation to paused pending an operator's verification of the existing Workers Free account. The attestation flag is not an account billing API. Production ignores all media bindings; HTTP loopback plus an explicit local-demo flag permits simulated R2 only. No paid fallback, R2 activation or account upgrade is part of this deployment. Saved history and policy/link workflows remain available when AI is paused. Health capabilities and the UI agree on these restrictions.
+
 ## Verification and limits
 
 Automated tests execute production SQL through SQLite and the production API handler. Browser tests use the same handler, persisted state and controlled model replies across two accounts. Coverage includes workspace isolation, roles, two-person approval, expiry, migration preservation, immutable records, audit rollback, retry races, stale permissions, optimistic decisions, exports, session revocation, quote validation, model failures, safe rendering and responsive layouts.

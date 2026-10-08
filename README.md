@@ -21,7 +21,7 @@ Veriq does not access customer account records, send replies, establish universa
 
 **Links & media** saves private bookmarks or files with a context note and SHA-256 fingerprint. Inspect and approve references before attaching them to a review with an explanation of the claim they support. Team approval requires a different administrator. Archived references remain in historical attachments and cannot be used for new attachments. Attachments never change the AI verdict or bypass approval rules.
 
-Links are not fetched. Raw media is not used for AI evidence: no OCR, transcription or automated media verification is implemented. PNG, JPEG, PDF, MP3, WAV and MP4 uploads use private Cloudflare R2 and authenticated forced downloads. Without the `MEDIA` binding, links/chat still work and the app explains why uploads are unavailable. See [setup and release evaluation](docs/EVIDENCE_CHAT.md).
+Links are not fetched. Raw media is not used for AI evidence: no OCR, transcription or automated media verification is implemented. PNG, JPEG, PDF, MP3, WAV and MP4 uploads are supported in the local R2 emulator only. Production media uploads are disabled because R2 permits billable overages. Hosted links remain usable; AI chat/review waits until an operator verifies the Cloudflare Workers Free plan. See the [free-only policy](docs/FREE_TIER_POLICY.md). See [setup and release evaluation](docs/EVIDENCE_CHAT.md).
 
 ## Company demo and feedback
 
@@ -103,11 +103,11 @@ Private routes require the `veriq_session` cookie. Set `X-Workspace-ID` to a wor
 | `GET /api/chat/:id`                        | Saved question/answer and linked claim review.                                 |
 | `GET /api/evidence`                        | Search/filter private reference metadata with `q`, `kind`, `status`.           |
 | `POST /api/evidence/links`                 | Save `{title,url,note}` as an immutable draft bookmark.                        |
-| `POST /api/evidence/media`                 | Bounded multipart `{title,note,file}` to private R2.                           |
+| `POST /api/evidence/media`                 | Local emulator only: bounded multipart `{title,note,file}`.                    |
 | `POST /api/evidence/:id/approve`           | Approve an inspected reference (owner/admin, two-person teams).                |
 | `POST /api/evidence/:id/archive`           | Retain historical attachments; exclude future attachment.                      |
 | `POST /api/evidence/:id/attach`            | Attach an approved reference with `{reviewId,note}`.                           |
-| `GET /api/evidence/:id/download`           | Authenticated, non-cacheable file attachment.                                  |
+| `GET /api/evidence/:id/download`           | Local emulator only: authenticated, non-cacheable file attachment.             |
 | `GET /api/workspaces`                      | List memberships and roles.                                                    |
 | `POST /api/workspaces`                     | Create a team workspace with `{name}`.                                         |
 | `GET /api/workspaces/:id/overview`         | Active policies, drafts, pending decisions and members.                        |
@@ -138,6 +138,6 @@ Pilot APIs: `GET /api/demo` lists the fictional policy and three scenarios; `POS
 
 Cloudflare Pages serves the UI and first-party API proxy. Workers handles the API; Workers AI (`gpt-oss-20b`) evaluates full selected document text; D1 stores workspaces, roles, sessions, policies, reviews, leases and atomic audit events. KV is no longer required by auth. [Architecture and rollout](docs/ARCHITECTURE.md) describes migrations, deployment and limitations.
 
-This code does not migrate the production database or publish a deployment. Apply migrations `0003_workspaces.sql` and `0004_pilot_feedback.sql` after the two earlier migrations and deploy the API/UI together. Existing accounts, documents and historical reviews move into their own personal workspaces.
+This code does not migrate the production database or publish a deployment. Apply migrations `0003_workspaces.sql`, `0004_pilot_feedback.sql` and `0005_evidence_chat.sql` after the two earlier migrations and deploy the API/UI together. Existing accounts, documents and historical reviews move into their own personal workspaces.
 
 MIT — see LICENSE.
