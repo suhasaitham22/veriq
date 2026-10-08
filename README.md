@@ -15,6 +15,14 @@ Veriq gives support teams a private, shared workspace for policy versions, sente
 
 Veriq does not access customer account records, send replies, establish universal truth or search the public web. It is a foundation for enterprise pilots, not an enterprise certification or a measured accuracy guarantee. SSO, MFA, verified invitations, password recovery, billing and helpdesk interception are not implemented.
 
+## AI chat, links and media
+
+**AI support chat** drafts an answer from 1–10 selected active approved policies, then runs every sentence through the existing claim review. Open the saved review for exact quotes and a human decision. Follow-ups use up to six previous turns as context; previous AI answers are never treated as evidence. Workspace members share conversation history. Retries reuse the same answer/review rather than generate duplicates.
+
+**Links & media** saves private bookmarks or files with a context note and SHA-256 fingerprint. Inspect and approve references before attaching them to a review with an explanation of the claim they support. Team approval requires a different administrator. Archived references remain in historical attachments and cannot be used for new attachments. Attachments never change the AI verdict or bypass approval rules.
+
+Links are not fetched. Raw media is not used for AI evidence: no OCR, transcription or automated media verification is implemented. PNG, JPEG, PDF, MP3, WAV and MP4 uploads use private Cloudflare R2 and authenticated forced downloads. Without the `MEDIA` binding, links/chat still work and the app explains why uploads are unavailable. See [setup and release evaluation](docs/EVIDENCE_CHAT.md).
+
 ## Company demo and feedback
 
 Start with **Set up sample demo** in your personal workspace, choose a documented fact, wrong plan benefit or unsupported account promise, and run the actual review engine. Fictional `[Sample]` policies stay separate from company policies and cannot bypass two-person team approval.
@@ -35,6 +43,8 @@ This read-only check rejects an old API, missing Pages proxy, mismatched fronten
 | Create policy drafts and review replies             | Yes   | Yes   | Yes      | No     |
 | Record human review decisions                       | Yes   | Yes   | Yes      | No     |
 | Approve/archive policy versions                     | Yes   | Yes   | No       | No     |
+| Generate AI chat answers; save/attach references    | Yes   | Yes   | Yes      | No     |
+| Approve/archive references                          | Yes   | Yes   | No       | No     |
 | Submit pilot feedback                               | Yes   | Yes   | Yes      | Yes    |
 | Read/export pilot feedback                          | Yes   | Yes   | No       | No     |
 | Read audit trail; manage reviewer/viewer membership | Yes   | Yes   | No       | No     |
@@ -86,25 +96,35 @@ GitHub Actions runs these on pull requests and feature branches. AI fixtures are
 
 Private routes require the `veriq_session` cookie. Set `X-Workspace-ID` to a workspace you belong to; omitting it uses your personal workspace. Read lists accept `limit` (1–100, default 25), `cursor`, and supported filters. Follow `nextCursor` until it is null.
 
-| Route                                      | Purpose                                                                    |
-| ------------------------------------------ | -------------------------------------------------------------------------- |
-| `GET /api/workspaces`                      | List memberships and roles.                                                |
-| `POST /api/workspaces`                     | Create a team workspace with `{name}`.                                     |
-| `GET /api/workspaces/:id/overview`         | Active policies, drafts, pending decisions and members.                    |
-| `GET /api/workspaces/:id/members`          | List members (owner/admin).                                                |
-| `POST /api/workspaces/:id/members`         | Add `{email, role}` from registered accounts.                              |
-| `POST /api/workspaces/:id/members/:userId` | Change `{role}` or remove with `{remove:true}`.                            |
-| `GET /api/workspaces/:id/audit`            | Paginated administrative audit events.                                     |
-| `POST /api/documents`                      | Save `{title,version,content,sourceUrl?,validFrom?,validUntil?}` as draft. |
-| `GET /api/documents`                       | Metadata list; filters `q`, `status`.                                      |
-| `GET /api/documents/:id`                   | Read the immutable text.                                                   |
-| `POST /api/documents/:id/approve`          | Approve a draft policy.                                                    |
-| `POST /api/documents/:id/archive`          | Exclude a version from future reviews.                                     |
-| `POST /api/reviews`                        | Review `{draft,documentIds}`.                                              |
-| `GET /api/reviews`                         | Review queue; filters `q`, `decision`.                                     |
-| `GET /api/reviews/:id`                     | Read evidence, decision, revision and current policy eligibility.          |
-| `POST /api/reviews/:id/decision`           | Record `{decision:'approved'                                               | 'rejected',note,expectedRevision}`. |
-| `GET /api/reviews/:id/export`              | Private evidence JSON download.                                            |
+| Route                                      | Purpose                                                                        |
+| ------------------------------------------ | ------------------------------------------------------------------------------ |
+| `POST /api/chat`                           | Generate/check `{question,documentIds,parentId?}`; required `Idempotency-Key`. |
+| `GET /api/chat`                            | Paginated completed workspace chat turns.                                      |
+| `GET /api/chat/:id`                        | Saved question/answer and linked claim review.                                 |
+| `GET /api/evidence`                        | Search/filter private reference metadata with `q`, `kind`, `status`.           |
+| `POST /api/evidence/links`                 | Save `{title,url,note}` as an immutable draft bookmark.                        |
+| `POST /api/evidence/media`                 | Bounded multipart `{title,note,file}` to private R2.                           |
+| `POST /api/evidence/:id/approve`           | Approve an inspected reference (owner/admin, two-person teams).                |
+| `POST /api/evidence/:id/archive`           | Retain historical attachments; exclude future attachment.                      |
+| `POST /api/evidence/:id/attach`            | Attach an approved reference with `{reviewId,note}`.                           |
+| `GET /api/evidence/:id/download`           | Authenticated, non-cacheable file attachment.                                  |
+| `GET /api/workspaces`                      | List memberships and roles.                                                    |
+| `POST /api/workspaces`                     | Create a team workspace with `{name}`.                                         |
+| `GET /api/workspaces/:id/overview`         | Active policies, drafts, pending decisions and members.                        |
+| `GET /api/workspaces/:id/members`          | List members (owner/admin).                                                    |
+| `POST /api/workspaces/:id/members`         | Add `{email, role}` from registered accounts.                                  |
+| `POST /api/workspaces/:id/members/:userId` | Change `{role}` or remove with `{remove:true}`.                                |
+| `GET /api/workspaces/:id/audit`            | Paginated administrative audit events.                                         |
+| `POST /api/documents`                      | Save `{title,version,content,sourceUrl?,validFrom?,validUntil?}` as draft.     |
+| `GET /api/documents`                       | Metadata list; filters `q`, `status`.                                          |
+| `GET /api/documents/:id`                   | Read the immutable text.                                                       |
+| `POST /api/documents/:id/approve`          | Approve a draft policy.                                                        |
+| `POST /api/documents/:id/archive`          | Exclude a version from future reviews.                                         |
+| `POST /api/reviews`                        | Review `{draft,documentIds}`.                                                  |
+| `GET /api/reviews`                         | Review queue; filters `q`, `decision`.                                         |
+| `GET /api/reviews/:id`                     | Read evidence, decision, revision and current policy eligibility.              |
+| `POST /api/reviews/:id/decision`           | Record `{decision:'approved'                                                   | 'rejected',note,expectedRevision}`. |
+| `GET /api/reviews/:id/export`              | Private evidence JSON download.                                                |
 
 Use a unique `Idempotency-Key` (16–128 letters, digits, `_` or `-`) when creating a review. A completed identical request replays without another model call/quota charge; changed payloads conflict. A running duplicate returns `409 REVIEW_IN_PROGRESS`. Retry after a short wait using the same key. Records are retained for 24 hours after completion; retries after that window can create another review. The UI preserves the key after a transport failure until the draft or selected sources change.
 

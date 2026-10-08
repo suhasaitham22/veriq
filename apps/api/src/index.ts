@@ -8,7 +8,10 @@ import { workspaceRoutes, resolveScope } from "./workspaces.ts";
 import { documentRoutes } from "./documents.ts";
 import { reviewRoutes } from "./reviews.ts";
 import { pilotRoutes } from "./pilot.ts";
+import { evidenceRoutes } from "./evidence.ts";
+import { chatRoutes } from "./chat.ts";
 export interface Env {
+  MEDIA?: R2Bucket;
   AI: AIClient;
   DB: D1Database;
   CACHE?: KVNamespace;
@@ -52,9 +55,16 @@ export default {
           {
             ok: true,
             service: "veriq-api",
-            v: 5,
+            v: 6,
             mode: "support_review",
-            features: ["workspaces", "pilot_feedback", "sample_demo"],
+            features: [
+              "workspaces",
+              "pilot_feedback",
+              "sample_demo",
+              "evidence_store",
+              "ai_chat",
+            ],
+            mediaAvailable: !!env.MEDIA,
           },
           200,
           headers,
@@ -96,7 +106,9 @@ export default {
           headers,
         );
       if (
-        !/^\/api\/(documents|reviews|demo|feedback)(?:\/|$)/.test(url.pathname)
+        !/^\/api\/(documents|reviews|demo|feedback|evidence|chat)(?:\/|$)/.test(
+          url.pathname,
+        )
       )
         throw new HttpError(404, "Endpoint not found.", "NOT_FOUND");
       const scope = await resolveScope(
@@ -107,7 +119,14 @@ export default {
       const result =
         (await documentRoutes(req, url, scope)) ??
         (await reviewRoutes(req, url, scope, env.AI)) ??
-        (await pilotRoutes(req, url, scope));
+        (await pilotRoutes(req, url, scope)) ??
+        (await evidenceRoutes(req, url, scope, env.MEDIA)) ??
+        (await chatRoutes(req, url, scope, env.AI));
+      if (result instanceof Response) {
+        const h = new Headers(result.headers);
+        for (const [k, v] of Object.entries(headers)) h.set(k, v);
+        return new Response(result.body, { status: result.status, headers: h });
+      }
       if (!result) throw new HttpError(404, "Endpoint not found.", "NOT_FOUND");
       const attachment: Record<string, string> =
         /^\/api\/reviews\/[a-f0-9-]{36}\/export$/.test(url.pathname)
@@ -118,9 +137,14 @@ export default {
       return json(
         result,
         req.method === "POST" &&
-          ["/api/documents", "/api/reviews", "/api/feedback"].includes(
-            url.pathname,
-          )
+          [
+            "/api/documents",
+            "/api/reviews",
+            "/api/feedback",
+            "/api/evidence/links",
+            "/api/evidence/media",
+            "/api/chat",
+          ].includes(url.pathname)
           ? 201
           : 200,
         { ...headers, ...attachment },

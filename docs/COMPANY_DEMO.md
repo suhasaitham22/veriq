@@ -8,7 +8,7 @@ Before sharing the link, an operator with access to the existing Cloudflare acco
 
 1. Authenticate Wrangler (`npx wrangler login`, then `npx wrangler whoami`) or provision an appropriately scoped deployment token through the account's normal secret management. Do not put tokens in repository files or chat.
 2. Back up the target D1 database and inspect existing schemas and migration history. Reconcile production-only Slack/Discord handlers before replacing the Worker. See [architecture and rollout](ARCHITECTURE.md).
-3. Test migration 0004 after 0001–0003 in staging with representative existing data. The new `pilot_feedback` table is additive; prior user/policy/review rows remain unchanged. Apply unapplied migrations to the intended production DB only after staging verification.
+3. Test migrations 0004 and 0005 after 0001–0003 in staging with representative existing data. The new feedback, evidence and chat tables are additive; prior user/policy/review rows remain unchanged. Apply unapplied migrations to the intended production DB only after staging verification.
 4. Deploy the API and Pages app from the same merged release. Confirm API `WEB_ORIGIN` equals the Pages origin, and Pages `API_ORIGIN` points to the API Worker. Deploy `apps/web`, including `_worker.js` and `_routes.json`; publishing HTML alone leaves the first-party API broken.
 5. Run the release check, then sign in and exercise the sample scenarios with live Workers AI. The check verifies routing/version/privacy boundaries; it does not measure real-model accuracy.
 
@@ -33,13 +33,13 @@ Official references: [D1 migration commands](https://developers.cloudflare.com/d
 
 Expected release check:
 
-| Boundary              | Required evidence                                                                                     |
-| --------------------- | ----------------------------------------------------------------------------------------------------- |
-| First-party API       | `/api/health` returns JSON, `mode:support_review`, version ≥5 and demo/feedback/workspace features.   |
-| Private access        | Signed-out `/api/auth/me` returns 401 JSON with `Cache-Control:no-store`.                             |
-| Legacy public sharing | `/api/r/:id` returns 410.                                                                             |
-| Frontend              | Workspace selector, sample scenarios and feedback dialog are present with the Pages security headers. |
-| Signed-in sample flow | Setup → actual AI review → evidence → human decision → saved feedback/export works.                   |
+| Boundary              | Required evidence                                                                                                           |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| First-party API       | `/api/health` returns JSON, `mode:support_review`, version ≥6 and demo/feedback/workspace/evidence/chat features.           |
+| Private access        | Signed-out `/api/auth/me` returns 401 JSON with `Cache-Control:no-store`.                                                   |
+| Legacy public sharing | `/api/r/:id` returns 410.                                                                                                   |
+| Frontend              | Workspace selector, sample scenarios, chat/reference forms and feedback dialog are present with the Pages security headers. |
+| Signed-in sample flow | Setup → actual AI review → evidence → human decision → saved feedback/export works.                                         |
 
 ## Short demonstration
 
@@ -50,7 +50,9 @@ Use fictional sample data first, before importing any company documentation.
 3. Try **Wrong plan benefit**. Show how the Starter export limit conflicts with the draft's unlimited-export claim.
 4. Try **Unsupported account promise**. Explain that documentation cannot establish that a refund was issued or when the money will arrive. These assertions need account/action evidence.
 5. Click **Give feedback**. Rate usefulness, select a category, and record a concrete obstacle or incorrect finding. The note can link to the currently displayed review. Owners/admins can inspect feedback and download JSON. Viewers can submit notes but cannot inspect other people's feedback or change reviews/policies.
-6. Briefly show the company workflow: create a team, add a registered teammate as a second admin, save a policy version, and have the other admin approve it. Show the audit event and a shared review decision.
+6. Open **AI support chat**, select the sample policy and ask about the refund deadline. Open the generated claim review and inspect it before any approval. Test a follow-up and an account-specific question that policy cannot answer.
+7. Open **Add supporting reference** on a saved review. Save a link, inspect and approve it, then attach it with a claim explanation. If R2 is configured, repeat with a nonsensitive PDF/image and verify the private download. Attachments supplement a record; they cannot make missing AI evidence pass. See [storage setup and feature evaluation](EVIDENCE_CHAT.md).
+8. Briefly show the company workflow: create a team, add a registered teammate as a second admin, save a policy version, and have the other admin approve it. Show the audit event and a shared review decision.
 
 These examples run the actual configured review engine; results are not prerecorded. If a real-model finding is wrong or evaluation fails, retain it and record evidence feedback. Do not replace a failed result with a staged success or suggest that quotes alone establish semantic accuracy.
 

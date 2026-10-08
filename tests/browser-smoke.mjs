@@ -6,11 +6,19 @@ import { resolve, extname } from "node:path";
 import { chromium } from "playwright";
 import api from "../apps/api/src/index.ts";
 import pages from "../apps/web/_worker.js";
-import { fixture } from "./helpers.ts";
+import { fixture, mediaBucket } from "./helpers.ts";
 
 const f = await fixture({
   async run(_model, input) {
-    const { statement, passages } = JSON.parse(input.messages[1].content);
+    const data = JSON.parse(input.messages[1].content);
+    if (data.question)
+      return {
+        response: JSON.stringify({
+          answer:
+            "Refund requests must be submitted within 30 days of purchase.",
+        }),
+      };
+    const { statement, passages } = data;
     if (
       !statement.includes("unlimited") &&
       statement !==
@@ -42,6 +50,7 @@ const f = await fixture({
     };
   },
 });
+f.env.MEDIA = mediaBucket().bucket;
 const root = resolve("apps/web");
 const server = createServer(async (req, res) => {
   try {
@@ -131,6 +140,145 @@ try {
     .getByRole("button", { name: "Load scenario", exact: true })
     .click();
   await page.getByRole("button", { name: "Review draft", exact: true }).click();
+  await page.locator("#results .ready_for_review").waitFor();
+  await page
+    .getByRole("button", { name: "AI support chat", exact: true })
+    .click();
+  await page
+    .getByLabel(
+      "Chat policy [Sample] Export and refund policy, version demo-v1",
+    )
+    .check();
+  await page.getByLabel("Support question").fill("What is the refund window?");
+  await page
+    .getByRole("button", { name: "Generate and check answer", exact: true })
+    .click();
+  await page
+    .getByText(
+      "Draft saved with a claim review. A person still decides whether to send.",
+    )
+    .waitFor();
+  await page
+    .locator("#chat-output")
+    .getByText(
+      "Refund requests must be submitted within 30 days of purchase.",
+      { exact: true },
+    )
+    .waitFor();
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.screenshot({ path: "/tmp/veriq-chat.png", fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  assert.equal(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+    true,
+  );
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page
+    .locator("#chat-output")
+    .getByRole("button", { name: "Open claim review" })
+    .click();
+  await page.locator("#results .ready_for_review").waitFor();
+  await page
+    .getByRole("button", { name: "Add supporting reference", exact: true })
+    .click();
+  await page
+    .getByLabel("Reference title")
+    .fill("Refund reference <script>alert(1)</script>");
+  await page
+    .getByLabel("Reference URL")
+    .fill("https://docs.example.test/refunds");
+  await page
+    .getByLabel("Reference context")
+    .fill("Documents the refund deadline, not account actions.");
+  await page
+    .getByRole("button", { name: "Save draft reference", exact: true })
+    .click();
+  await page
+    .getByText("Reference saved as a draft. Inspect it before approval.")
+    .waitFor();
+  page.once("dialog", (dialog) => dialog.accept());
+  await page
+    .getByRole("button", { name: "Approve reference", exact: true })
+    .click();
+  await page
+    .getByLabel("Attachment explanation")
+    .fill("Supports the stated policy deadline.");
+  await page
+    .getByRole("button", { name: "Attach to review", exact: true })
+    .click();
+  await page
+    .getByText(
+      "Supporting reference attached. It does not change the model verdict.",
+    )
+    .waitFor();
+  assert.equal(await page.locator("#evidence-list script").count(), 0);
+  await page.getByLabel("Reference type").selectOption("media");
+  await page.getByLabel("Reference title").fill("Private refund PDF");
+  await page
+    .getByLabel("Reference context")
+    .fill("PDF reference about the refund policy.");
+  await page.getByLabel("Private file").setInputFiles({
+    name: "refund.pdf",
+    mimeType: "application/pdf",
+    buffer: Buffer.from("%PDF-1.7\nprivate reference"),
+  });
+  await page
+    .getByRole("button", { name: "Save draft reference", exact: true })
+    .click();
+  await page
+    .locator("#evidence-list")
+    .getByRole("heading", { name: "Private refund PDF" })
+    .waitFor();
+  page.once("dialog", (dialog) => dialog.accept());
+  await page
+    .getByRole("button", { name: "Approve reference", exact: true })
+    .click();
+  const mediaDownload = page.waitForEvent("download");
+  await page.getByRole("button", { name: /Download refund.pdf/ }).click();
+  assert.equal((await mediaDownload).suggestedFilename(), "refund.pdf");
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.screenshot({ path: "/tmp/veriq-references.png", fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  assert.equal(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+    true,
+  );
+  await page.setViewportSize({ width: 1280, height: 900 });
+
+  await page.getByRole("button", { name: "Review desk", exact: true }).click();
+  const attachedReview = f.sqlite
+    .prepare("SELECT review_id FROM review_attachments LIMIT 1")
+    .get().review_id;
+  await page.locator(`#history a[href="#review=${attachedReview}"]`).click();
+  await page
+    .locator("#results")
+    .getByText(
+      "Refund reference <script>alert(1)</script> · approved · Supports the stated policy deadline.",
+      { exact: false },
+    )
+    .waitFor();
+  await page
+    .getByRole("button", { name: "AI support chat", exact: true })
+    .click();
+  await page
+    .getByLabel("Support question")
+    .fill("Please clarify the deadline.");
+  await page
+    .getByRole("button", { name: "Generate and check answer", exact: true })
+    .click();
+  await page
+    .getByText(
+      "Draft saved with a claim review. A person still decides whether to send.",
+    )
+    .waitFor();
+  await page
+    .locator("#chat-output")
+    .getByRole("button", { name: "Open claim review" })
+    .click();
   await page.locator("#results .ready_for_review").waitFor();
   await page
     .getByRole("button", { name: "Give feedback", exact: true })
@@ -377,7 +525,7 @@ try {
   assert.equal(errors.length, 0, errors.join("\n"));
   assert.equal(
     f.sqlite.prepare("SELECT COUNT(*) AS n FROM support_reviews").get().n,
-    5,
+    7,
   );
   await page.getByRole("button", { name: "Documents", exact: true }).click();
   page.once("dialog", (dialog) => dialog.accept());
@@ -440,7 +588,7 @@ try {
   );
   await staleContext.close();
   console.log(
-    "Browser smoke passed: signup, sample setup/scenarios, feedback collection/export/access, stale-release guard, approved document, contradictory/supported/missing evidence, history, edit invalidation, text import, safe rendering, archival, mobile layout, shared workspace, two-person approval, human decision, export, audit, role downgrade, logout and login.",
+    "Browser smoke passed: AI chat, follow-up, claim review, link approval/attachment, private media upload/download, safe reference rendering, signup, sample setup/scenarios, feedback collection/export/access, stale-release guard, approved document, contradictory/supported/missing evidence, history, edit invalidation, text import, safe rendering, archival, mobile layout, shared workspace, two-person approval, human decision, export, audit, role downgrade, logout and login.",
   );
 } finally {
   await browser?.close();

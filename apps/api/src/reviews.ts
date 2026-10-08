@@ -19,6 +19,7 @@ import { WRITERS, requireRole, mutate, membershipGuard } from "./workspaces.ts";
 import type { Scope } from "./workspaces.ts";
 import { ACTIVE, snapshot } from "./documents.ts";
 import type { DocumentRow } from "./documents.ts";
+import { attachments } from "./evidence.ts";
 interface ReviewRow {
   id: string;
   draft_text: string;
@@ -44,6 +45,7 @@ async function record(row: ReviewRow, db: D1Database, workspaceId: string) {
         .first<{ n: number }>()
     : null;
   return {
+    attachments: await attachments(db, workspaceId, row.id),
     policiesCurrent: !!active && active.n === ids.length,
     ...{
       id: row.id,

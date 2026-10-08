@@ -1,3 +1,4 @@
+import { workspaceTools } from "./workspace-tools.js";
 const $ = (id) => document.getElementById(id);
 const labels = {
   supported: "Supported",
@@ -26,6 +27,21 @@ let user,
 const pages = new Map();
 const writer = () => ["owner", "admin", "reviewer"].includes(workspace?.role);
 const admin = () => ["owner", "admin"].includes(workspace?.role);
+const tools = workspaceTools({
+  api,
+  el,
+  msg,
+  mutate,
+  writer,
+  admin,
+  openReview,
+  controls,
+  view,
+  workspace: () => workspace,
+  user: () => user,
+  epoch: () => epoch,
+});
+
 function el(tag, text, cls) {
   const n = document.createElement(tag);
   if (text !== undefined) n.textContent = text;
@@ -68,6 +84,7 @@ async function api(path, body, key) {
   return data;
 }
 function controls() {
+  tools.controls(busy);
   $("workspace-select").disabled = busy || !workspace;
   $("give-feedback").disabled = busy || !workspace;
   $("feedback-fields").disabled = busy;
@@ -116,6 +133,14 @@ function button(text, fn, permission) {
   return n;
 }
 const views = {
+  evidence: [
+    "Links & media",
+    "Save private references and attach approved evidence to review records.",
+  ],
+  chat: [
+    "AI support chat",
+    "Draft answers from approved policies, then inspect their claim reviews.",
+  ],
   review: [
     "Review desk",
     "Check support answers against the policies your team approves.",
@@ -156,6 +181,7 @@ function view(name, refresh = true) {
     if (name === "documents") tasks.push(loadDocuments());
     Promise.all(tasks).catch((e) => msg("global-status", e.message, true));
   }
+  tools.view(name).catch((e) => msg("global-status", e.message, true));
   if (name === "team")
     loadMembers().catch((e) => msg("team-status", e.message, true));
   if (name === "feedback")
@@ -220,6 +246,7 @@ async function loadWorkspaces(preferred) {
 }
 async function switchWorkspace(id) {
   epoch++;
+  tools.reset();
   sampleDocumentIds = [];
   $("demo-status").textContent = "";
   workspace = workspaces.find((w) => w.id === id) || workspaces[0];
@@ -605,6 +632,7 @@ function render(data) {
     card.append(el("p", r.reviewNote));
     output.append(card);
   }
+  output.append(tools.renderAttachments(data));
   const decision = el("section", undefined, "decision-card");
   decision.append(
     el("h3", "Human decision"),
@@ -977,13 +1005,16 @@ controls();
     const health = await api("/api/health");
     if (
       health.mode !== "support_review" ||
-      health.v < 5 ||
-      !health.features?.includes("pilot_feedback")
+      health.v < 6 ||
+      !["pilot_feedback", "evidence_store", "ai_chat"].every((f) =>
+        health.features?.includes(f),
+      )
     )
       throw new Error(
         "The deployed API is older than this app. Apply migrations and deploy the API and Pages together before the demo.",
       );
 
+    tools.media(health.mediaAvailable);
     user = (await api("/api/auth/me")).user;
     $("who").textContent = user.email;
     $("avatar").textContent = user.email[0].toUpperCase();

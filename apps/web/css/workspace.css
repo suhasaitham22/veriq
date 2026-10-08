@@ -814,3 +814,38 @@ dialog::backdrop {
     width: 100%;
   }
 }
+
+.chat-turn {
+  padding: 16px 0;
+  border-bottom: 1px solid #e4eaf2;
+}
+.chat-answer {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+#chat-sources {
+  max-height: 500px;
+  overflow-y: auto;
+}
+
+.document-card {
+  padding: 18px 0;
+  border-top: 1px solid #e4eaf2;
+  overflow-wrap: anywhere;
+}
+#chat-sources label.source-item {
+  display: flex;
+  gap: 10px;
+  align-items: start;
+  font-size: 12px;
+  font-weight: 500;
+  margin: 0;
+}
+.chat-turn h3 {
+  overflow-wrap: anywhere;
+}
+#tools-status,
+#chat-status {
+  margin-top: 12px;
+  font-size: 12px;
+}
