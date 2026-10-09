@@ -1,0 +1,4 @@
+{"id":"refund-window-exact","review":{"status":"ready_for_review","receipts":[{"statement":"Refund requests must be submitted within 30 days of purchase.","verdict":"supported","evidence":[{"quote":"Refund requests must be submitted within 30 days of purchase."}],"counterEvidence":[]}]}}
+{"id":"refund-window-stretched","review":{"status":"ready_for_review","receipts":[{"statement":"Refunds are available within 60 days.","verdict":"supported","evidence":[{"quote":"Refunds are available on request from the billing page."}],"counterEvidence":[]}]}}
+{"id":"account-fact-invented","review":{"status":"needs_review","receipts":[{"statement":"I issued your refund today.","verdict":"unsupported","evidence":[],"counterEvidence":[]}]}}
+{"id":"quota-refused","error":{"code":"QUOTA_EXCEEDED"}}

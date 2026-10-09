@@ -19,7 +19,7 @@ test("AI fails closed without an exact Free-plan attestation, before model calls
           new Request(`https://veriq-api.example.test${path}`, {
             method: "POST",
             headers: {
-              cookie: `veriq_session=${f.aliceToken}`,
+              cookie: `__Host-veriq_session=${f.aliceToken}`,
               "content-type": "application/json",
               "idempotency-key": "free-policy-test-0001",
             },
@@ -33,7 +33,8 @@ test("AI fails closed without an exact Free-plan attestation, before model calls
     }
     assert.equal(calls, 0);
     for (const table of [
-      "request_limits",
+      "ai_budget",
+      "usage",
       "review_requests",
       "chat_turns",
       "support_reviews",
@@ -42,6 +43,7 @@ test("AI fails closed without an exact Free-plan attestation, before model calls
         f.sqlite.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get()!.n,
         0,
       );
+    assert.equal(f.sqlite.prepare("SELECT COUNT(*) AS n FROM request_limits WHERE key LIKE 'chat:%'").get()!.n, 0);
   } finally {
     f.sqlite.close();
   }
@@ -73,7 +75,7 @@ test("pausing AI retains authenticated documents, bookmarks and private history 
         new Request(`https://veriq-api.example.test${path}`, {
           method: "POST",
           headers: {
-            cookie: `veriq_session=${f.aliceToken}`,
+            cookie: `__Host-veriq_session=${f.aliceToken}`,
             "content-type": "application/json",
           },
           body: JSON.stringify(body),
@@ -92,7 +94,7 @@ test("pausing AI retains authenticated documents, bookmarks and private history 
         (
           await api.fetch(
             new Request(`https://veriq-api.example.test${path}`, {
-              headers: { cookie: `veriq_session=${f.aliceToken}` },
+              headers: { cookie: `__Host-veriq_session=${f.aliceToken}` },
             }),
             f.env,
           )
@@ -137,7 +139,7 @@ test("remote media fails closed even with a bucket and local-demo flag; no stora
       const response = await api.fetch(
         new Request(`${origin}/api/evidence/media`, {
           method: "POST",
-          headers: { cookie: `veriq_session=${f.aliceToken}` },
+          headers: { cookie: `__Host-veriq_session=${f.aliceToken}` },
           body: "No upload should be read",
         }),
         f.env,
@@ -147,7 +149,7 @@ test("remote media fails closed even with a bucket and local-demo flag; no stora
     }
     assert.equal(operations, 0);
     assert.equal(
-      f.sqlite.prepare("SELECT COUNT(*) AS n FROM request_limits").get()!.n,
+      f.sqlite.prepare("SELECT COUNT(*) AS n FROM request_limits WHERE key LIKE 'media:%'").get()!.n,
       0,
     );
     assert.equal(
@@ -171,7 +173,7 @@ test("health reports AI and local-media capabilities independently; local media 
       let health = await (
         await api.fetch(new Request(`${origin}/api/health`), f.env)
       ).json();
-      assert.equal(health.v, 8);
+      assert.equal(health.v, 9);
       assert.equal(health.billingMode, "free_only");
       assert.equal(health.aiAvailable, true);
       assert.equal(health.mediaAvailable, true);

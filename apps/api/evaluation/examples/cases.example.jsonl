@@ -1,0 +1,6 @@
+{"datasetVersion":1,"dataset":"fictional-evaluator-smoke","labelSource":"fictional_fixture","notes":"Invented cases that exercise the evaluator itself. No customer data, no pilot labels and no accuracy claim."}
+{"id":"refund-window-exact","expected":"ready_for_review","requiredQuotes":["within 30 days of purchase"],"note":"Fictional: the draft repeats the refund window verbatim."}
+{"id":"refund-window-stretched","expected":"requires_changes","requiredQuotes":["within 30 days of purchase"],"note":"Fictional: the draft promises 60 days against a 30-day policy."}
+{"id":"account-fact-invented","expected":"needs_review","requiredQuotes":[],"note":"Fictional: the draft claims a refund was already issued."}
+{"id":"quota-refused","expected":"needs_review","requiredQuotes":[],"note":"Fictional: the capture attempt was refused by the daily allowance."}
+{"id":"never-captured","expected":"needs_review","requiredQuotes":[],"note":"Fictional: deliberately absent from the capture file."}

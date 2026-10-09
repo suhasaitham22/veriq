@@ -145,6 +145,14 @@ textarea:disabled {
   background: #fffffff0;
   padding: 32px;
 }
+.form-card code {
+  display: block;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  white-space: pre-wrap;
+  user-select: text;
+}
 .center {
   max-width: 480px;
   margin-top: 80px;

@@ -106,6 +106,9 @@
           </svg>
           Team &amp; access
         </button>
+        <button data-view="settings">
+          Workspace settings
+        </button>
         <button data-view="audit">
           <svg
             aria-hidden="true"
@@ -303,27 +306,28 @@
             </div>
             <aside class="card policy-selector">
               <div class="section-title">
-                <h2>Review sources</h2>
-                <span id="selected-count" class="subtle-chip">0 selected</span>
+                <h2>Active policy set</h2>
+                <span id="selected-count" class="subtle-chip">All active</span>
               </div>
               <p class="small">
-                Choose current approved documents for the relevant product and
-                plan. Select up to 10.
+                Every current approved policy in this workspace is included
+                automatically. Reviewers cannot silently omit an exception;
+                archive or replace a policy to change the active set.
               </p>
               <label class="sr-only" for="source-search"
-                >Search approved documents</label
+                >Search active approved documents</label
               ><input
                 id="source-search"
                 type="search"
-                placeholder="Find a policy or product…"
+                placeholder="Find an active policy…"
               />
               <div id="sources"></div>
               <button id="more-sources" class="btn btn-ghost btn-sm" hidden>
                 Load more policies
               </button>
               <p class="source-note">
-                Full text of selected documents is checked. A human makes the
-                final sending decision.
+                Full text of every active approved document is checked. A human
+                makes the final sending decision.
               </p>
               <button class="text-button" id="open-documents">
                 Manage document library →
@@ -549,13 +553,13 @@
           <div class="document-layout">
             <section class="card">
               <div class="section-title">
-                <h2>Ask approved policies</h2>
+                <h2>Ask the active policy set</h2>
                 <button id="chat-new" class="btn btn-ghost btn-sm">
                   New conversation
                 </button>
               </div>
               <p id="chat-context" class="small">
-                Select approved policies, then ask a support question.
+                Every active approved policy is included automatically.
               </p>
               <form id="chat-form">
                 <fieldset id="chat-fields">
@@ -577,7 +581,7 @@
               <p class="small">
                 Saved questions and answers are visible to members of this
                 workspace. Up to six previous turns provide conversation
-                context. Only the current selected policies establish evidence.
+                context. The active approved policy set establishes evidence.
               </p>
               <div id="chat-history"></div>
               <button
@@ -589,11 +593,12 @@
               </button>
             </section>
             <section class="card">
-              <h2>Policies for this answer</h2>
+              <h2>Active policies for this answer</h2>
               <p class="small">
-                Select 1–10 currently active approved policies. AI answers run
-                through the claim checker and require human review. Links and
-                raw media are supporting attachments only.
+                Every current approved policy is included automatically. Archive
+                or replace a policy to change the bounded workspace policy set.
+                AI answers run through the claim checker and require human
+                review. Links and raw media are supporting attachments only.
               </p>
               <div id="chat-sources"></div>
               <button
@@ -619,16 +624,19 @@
               <div id="members"></div>
             </section>
             <section class="card">
-              <h2>Add a registered teammate</h2>
+              <h2>Invite a teammate</h2>
               <p class="small">
-                Your teammate must create an account first. Adding a member
-                grants access to this workspace’s policies and reviews. No
-                invitation email is sent.
+                Enter a recipient label for your own records. The label is not
+                an identity check. Deliver the one-time invitation token to the
+                known recipient through a separate trusted channel.
               </p>
               <form id="member-form">
                 <fieldset id="member-fields">
-                  <label for="member-email">Member email</label
-                  ><input id="member-email" type="email" required /><label
+                  <label for="member-account-id">Recipient account ID</label
+                  ><input id="member-account-id" required pattern="[0-9a-fA-F-]{36}" /><label
+                    for="member-label"
+                    >Recipient label</label
+                  ><input id="member-label" maxlength="160" required /><label
                     for="member-role"
                     >Role</label
                   ><select id="member-role">
@@ -640,13 +648,127 @@
                     id="add-member"
                     data-mutation
                   >
-                    Add member
+                    Create invitation
                   </button>
                 </fieldset>
               </form>
+              <div id="invitation-token" class="notice" hidden></div>
               <div id="team-status" role="status" aria-live="polite"></div>
             </section>
           </div>
+        </section>
+        <section id="view-settings" class="view-panel" hidden>
+          <section class="card">
+            <h2>Workspace data controls</h2>
+            <p class="small">
+              Owners can inspect retention, export bounded pages, or destroy
+              this workspace. Password reauthentication is required. Export
+              pages are fetched one at a time and are never stored locally.
+            </p>
+            <div class="form-grid">
+              <form id="retention-form">
+                <label for="retention-days">Retention days (7–365)</label>
+                <input id="retention-days" type="number" min="7" max="365" required />
+                <label for="retention-password">Password to save retention</label>
+                <input id="retention-password" type="password" autocomplete="current-password" required />
+                <button class="btn form-submit">Save retention</button>
+              </form>
+              <form id="workspace-export-form">
+                <label for="export-password">Password to export</label>
+                <input id="export-password" type="password" autocomplete="current-password" required />
+                <button class="btn form-submit">Export workspace JSON</button>
+              </form>
+              <form id="purge-form">
+                <label for="purge-password">Password to purge retained records</label>
+                <input id="purge-password" type="password" autocomplete="current-password" required />
+                <button class="btn form-submit">Purge now</button>
+              </form>
+            </div>
+            <p id="lifecycle-status" class="small"></p>
+            <div id="settings-status" role="status" aria-live="polite"></div>
+          </section>
+          <section class="card">
+            <h2>Account security and invitations</h2>
+            <p class="small">
+              Password changes revoke sessions. Recovery codes are offline
+              secrets; labels and invitation tokens do not verify identity.
+            </p>
+            <p class="small">
+              Signed-in account ID: <code id="account-id"></code>. Share it
+              with an intended recipient through a verified channel.
+            </p>
+            <form id="security-form" class="form-grid">
+              <label for="security-password">Current password</label>
+              <input id="security-password" type="password" autocomplete="current-password" required />
+              <label for="security-new-password">New password (optional)</label>
+              <input id="security-new-password" type="password" autocomplete="new-password" minlength="12" />
+              <label for="security-mfa-code">Authenticator code (if MFA enabled)</label>
+              <input id="security-mfa-code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" />
+              <button class="btn form-submit">Rotate recovery code</button>
+            </form>
+            <form id="accept-invitation-form" class="form-grid">
+              <label for="invitation-token-input">Invitation token</label>
+              <input id="invitation-token-input" autocomplete="one-time-code" required />
+              <button class="btn form-submit">Accept invitation</button>
+            </form>
+            <form id="mfa-enroll-form" class="form-grid">
+              <label for="mfa-enroll-password">Password to enroll authenticator</label>
+              <input id="mfa-enroll-password" type="password" autocomplete="current-password" required />
+              <button class="btn form-submit">Start MFA enrollment</button>
+            </form>
+            <div id="mfa-secret" class="notice" hidden tabindex="-1"></div>
+            <form id="mfa-confirm-form" class="form-grid" hidden>
+              <label for="mfa-confirm-password">Password to confirm enrollment</label>
+              <input id="mfa-confirm-password" type="password" autocomplete="current-password" required />
+              <label for="mfa-confirm-code">Authenticator code</label>
+              <input id="mfa-confirm-code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" required />
+              <button class="btn form-submit">Confirm MFA</button>
+            </form>
+            <form id="mfa-disable-form" class="form-grid">
+              <label for="mfa-disable-password">Password to disable MFA</label>
+              <input id="mfa-disable-password" type="password" autocomplete="current-password" required />
+              <label for="mfa-disable-code">Authenticator code</label>
+              <input id="mfa-disable-code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" required />
+              <button class="btn form-submit">Disable MFA</button>
+            </form>
+            <div id="security-status" role="status" aria-live="polite"></div>
+            <div id="security-recovery-result" class="notice" hidden>
+              <strong>Save your replacement recovery code once:</strong>
+              <code id="security-recovery-display"></code>
+              <p class="small">
+                Sessions were revoked. Continue to the login page after storing
+                this code offline.
+              </p>
+              <button id="security-recovery-continue" class="btn" type="button">
+                Continue to login
+              </button>
+            </div>
+          </section>
+          <section class="card">
+            <h2>Destructive actions</h2>
+            <p class="small">
+              These actions require your password. Workspace deletion is
+              irreversible; account pseudonymization removes account labels and
+              personal workspace access, while shared-team contributions retain
+              stable actor IDs. Owned team workspaces must be deleted first.
+            </p>
+            <form id="workspace-delete-form" class="form-grid">
+              <label for="workspace-delete-password">Workspace password</label>
+              <input id="workspace-delete-password" type="password" autocomplete="current-password" required />
+              <label for="workspace-delete-name">Type workspace name exactly</label>
+              <input id="workspace-delete-name" required />
+              <label for="workspace-delete-confirm">Type DELETE</label>
+              <input id="workspace-delete-confirm" required pattern="DELETE" />
+              <button class="btn form-submit">Delete this workspace</button>
+            </form>
+            <form id="account-delete-form" class="form-grid">
+              <label for="account-delete-password">Account password</label>
+              <input id="account-delete-password" type="password" autocomplete="current-password" required />
+              <label for="account-delete-confirm">Type DELETE</label>
+              <input id="account-delete-confirm" required pattern="DELETE" />
+              <button class="btn form-submit">Delete my account</button>
+            </form>
+          </section>
         </section>
 
         <section id="view-audit" class="view-panel" hidden>

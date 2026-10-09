@@ -1,16 +1,14 @@
 import {
   InputError,
-  LIMITS,
   reviewDraft,
   sha256,
   splitStatements,
 } from "./pipeline.ts";
-import type { AIClient, Review } from "./pipeline.ts";
+import type { AIClient } from "./pipeline.ts";
 import {
   HttpError,
   readBody,
   string,
-  uuid,
   page,
   nextCursor,
   like,
@@ -19,9 +17,16 @@ import {
 import { DAILY_LIMITS } from "./usage.ts";
 import { WRITERS, requireRole, mutate, membershipGuard } from "./workspaces.ts";
 import type { Scope } from "./workspaces.ts";
-import { ACTIVE, snapshot } from "./documents.ts";
-import type { DocumentRow } from "./documents.ts";
+import {
+  ATTESTATION_KEYS,
+  activePolicies,
+  requireCompleteScope,
+  scopeFence,
+  scopeIsCurrent,
+  workspaceScope,
+} from "./policy-scope.ts";
 import { attachments } from "./evidence.ts";
+import { requireMfa } from "./mfa.ts";
 interface ReviewRow {
   id: string;
   draft_text: string;
@@ -36,23 +41,25 @@ interface ReviewRow {
   user_id: string;
 }
 async function record(row: ReviewRow, db: D1Database, workspaceId: string) {
-  const review = JSON.parse(row.review_json) as Review;
-  const ids = review.documents.map((d) => d.id);
-  const active = ids.length
-    ? await db
-        .prepare(
-          `SELECT COUNT(*) AS n FROM support_documents WHERE workspace_id=? AND ${ACTIVE} AND id IN (${ids.map(() => "?").join(",")})`,
-        )
-        .bind(workspaceId, ...ids)
-        .first<{ n: number }>()
-    : null;
+  const review: unknown = JSON.parse(row.review_json);
+  const policyScope = workspaceScope(review);
   return {
     attachments: await attachments(db, workspaceId, row.id),
-    policiesCurrent: !!active && active.n === ids.length,
+    /** A review without a full-workspace scope marker proves no coverage. */
+    fullWorkspaceScope: !!policyScope,
+    policiesCurrent: policyScope
+      ? await scopeIsCurrent(db, workspaceId, policyScope)
+      : false,
+    attestation: await db
+      .prepare(
+        "SELECT revision,decided_by,created_at,policy_applicability_confirmed AS policyApplicabilityConfirmed,account_facts_checked AS accountFactsChecked,evidence_inspected AS evidenceInspected FROM review_attestations WHERE review_id=? AND workspace_id=? ORDER BY revision DESC LIMIT 1",
+      )
+      .bind(row.id, workspaceId)
+      .first(),
     ...{
       id: row.id,
       draft: row.draft_text,
-      review: JSON.parse(row.review_json),
+      review,
       status: row.status,
       decision: row.decision,
       decisionNote: row.decision_note,
@@ -75,6 +82,24 @@ async function quota(db: D1Database, userId: string) {
       DAILY_LIMITS.reviews,
     )
     .first());
+}
+/**
+ * Approval is a human act, not a model result. The approver must state that
+ * they checked the three things a receipt deliberately does not establish.
+ */
+function requireAttestation(value: unknown) {
+  const refusal = new InputError(
+    `Approval requires attestation with ${ATTESTATION_KEYS.join(", ")} all true. Inspect the evidence, confirm these policies apply to this customer, and check account-specific facts yourself first.`,
+  );
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    throw refusal;
+  // Shape checked above; the three claims are read individually below.
+  const claims = { ...value } as Record<string, unknown>;
+  if (
+    Object.keys(claims).length !== ATTESTATION_KEYS.length ||
+    !ATTESTATION_KEYS.every((key) => claims[key] === true)
+  )
+    throw refusal;
 }
 export async function reviewRoutes(
   req: Request,
@@ -121,18 +146,6 @@ export async function reviewRoutes(
     if (typeof body.draft !== "string")
       throw new InputError("A draft string is required.");
     splitStatements(body.draft);
-    if (
-      !Array.isArray(body.documentIds) ||
-      !body.documentIds.length ||
-      body.documentIds.length > LIMITS.documents ||
-      !body.documentIds.every(uuid) ||
-      new Set(body.documentIds).size !== body.documentIds.length
-    )
-      throw new InputError(
-        `Select 1–${LIMITS.documents} distinct approved document IDs.`,
-      );
-    const ids = [...(body.documentIds as string[])].sort();
-    const marks = ids.map(() => "?").join(",");
     await db
       .prepare(
         "DELETE FROM review_requests WHERE expires_at<? AND state!='running'",
@@ -145,8 +158,10 @@ export async function reviewRoutes(
         "Idempotency-Key must be 16–128 letters, digits, hyphens or underscores.",
       );
     const operationKey = key ?? crypto.randomUUID();
+    // The retry identity is the draft. A completed key replays its own review
+    // even after the active set moved on, and the replayed record says so.
     const requestHash = await sha256(
-      JSON.stringify({ draft: body.draft, ids, engine: "support-v2" }),
+      JSON.stringify({ draft: body.draft, engine: "support-v3" }),
     );
     const existing = await db
       .prepare(
@@ -162,7 +177,7 @@ export async function reviewRoutes(
     if (existing && existing.request_hash !== requestHash)
       throw new HttpError(
         409,
-        "This retry key was already used for a different draft or policy set.",
+        "This retry key was already used for a different draft.",
         "IDEMPOTENCY_CONFLICT",
       );
     if (existing?.state === "completed") {
@@ -173,24 +188,10 @@ export async function reviewRoutes(
       if (row)
         return { ...(await record(row, db, workspace.id)), replayed: true };
     }
-    const query = `SELECT * FROM support_documents WHERE workspace_id=? AND ${ACTIVE} AND id IN (${marks}) ORDER BY id`;
-    const rows = (
-      await db
-        .prepare(query)
-        .bind(workspace.id, ...ids)
-        .all<DocumentRow>()
-    ).results;
-    if (rows.length !== ids.length)
-      throw new HttpError(
-        400,
-        "Selected documents are unavailable, expired, scheduled or not approved in this workspace.",
-        "DOCUMENTS_UNAVAILABLE",
-      );
-    const documents = rows.map(snapshot);
-    if (documents.reduce((n, d) => n + d.content.length, 0) > LIMITS.corpus)
-      throw new InputError(
-        "Selected documents exceed the review budget. Select a smaller policy set.",
-      );
+    // Always the complete active set: a caller may name it but cannot narrow it.
+    const policies = await activePolicies(db, workspace.id);
+    requireCompleteScope(body.documentIds, policies);
+    const ids = policies.scope.documentIds;
     const now = Math.floor(Date.now() / 1000),
       lease = crypto.randomUUID();
     // A lease fences late workers. Only one attempt for a retry key can save a review.
@@ -224,14 +225,17 @@ export async function reviewRoutes(
           "QUOTA_EXCEEDED",
           windowRetryAfter(86400),
         );
-      const review = await reviewDraft(body.draft, documents, ai);
+      const review = await reviewDraft(body.draft, policies, ai);
       const id = crypto.randomUUID();
+      // Adding, archiving or expiring a policy while the model ran invalidates
+      // this write, so no saved review can claim coverage it never had.
+      const fence = scopeFence(workspace.id, review.policyScope);
       const inserted = await mutate(
         scope,
         db
           .prepare(
             `INSERT INTO support_reviews(id,user_id,workspace_id,draft_text,review_json,status)
-        SELECT ?,?,?,?,?,? WHERE ${membershipGuard()} AND (SELECT COUNT(*) FROM support_documents WHERE workspace_id=? AND ${ACTIVE} AND id IN (${marks}))=?
+        SELECT ?,?,?,?,?,? WHERE ${membershipGuard()} AND ${fence.sql}
         AND EXISTS(SELECT 1 FROM review_requests WHERE workspace_id=? AND user_id=? AND key=? AND lease=? AND state='running')`,
           )
           .bind(
@@ -243,9 +247,7 @@ export async function reviewRoutes(
             review.status,
             workspace.id,
             user.id,
-            workspace.id,
-            ...ids,
-            ids.length,
+            ...fence.params,
             workspace.id,
             user.id,
             operationKey,
@@ -253,7 +255,7 @@ export async function reviewRoutes(
           ),
         "review.created",
         id,
-        { status: review.status, documentIds: ids },
+        { status: review.status, scope: review.scope, documentIds: ids },
         [
           db
             .prepare(
@@ -273,7 +275,7 @@ export async function reviewRoutes(
       if (!inserted)
         throw new HttpError(
           409,
-          "Policies or permissions changed during review. Refresh and retry.",
+          "The workspace's active policies or your permissions changed while this review ran. Run a new review.",
           "REVIEW_STALE",
         );
       return { id, review, decision: "pending", revision: 0, replayed: false };
@@ -296,33 +298,43 @@ export async function reviewRoutes(
     .bind(match[1], workspace.id)
     .first<ReviewRow>();
   if (!row) throw new HttpError(404, "Review not found.");
-  if (req.method === "GET" && !match[2]) return record(row, db, workspace.id);
-  if (req.method === "GET" && match[2] === "export")
+  if (req.method === "GET" && (!match[2] || match[2] === "export"))
     return record(row, db, workspace.id);
   if (req.method !== "POST" || match[2] !== "decision") return null;
   requireRole(scope, WRITERS);
+  // A team decision is accountable to a verified second factor.
+  if (!workspace.is_personal) requireMfa(user);
   const body = await readBody(req);
   if (body.decision !== "approved" && body.decision !== "rejected")
     throw new InputError("Choose approved or rejected.");
+  const approving = body.decision === "approved";
+  if (approving) requireAttestation(body.attestation);
+  else if (body.attestation !== undefined)
+    throw new InputError(
+      "An attestation records a human approval only. Remove it to reject this draft.",
+    );
   const note = string(body.note, "Decision note", 2000, 5);
   if (
     !Number.isInteger(body.expectedRevision) ||
     Number(body.expectedRevision) < 0
   )
     throw new InputError("A nonnegative expectedRevision is required.");
-  const result = JSON.parse(row.review_json) as Review;
-  const documentIds = result.documents.map((d) => d.id),
-    marks = documentIds.map(() => "?").join(",");
-  if (body.decision === "approved" && row.status !== "ready_for_review")
+  const revision = Number(body.expectedRevision) + 1;
+  const policyScope = workspaceScope(JSON.parse(row.review_json));
+  if (approving && !policyScope)
+    throw new HttpError(
+      409,
+      "This review predates full-workspace policy coverage, so its scope cannot be proven and it cannot be approved. Run a new review; it will cover every active approved policy.",
+      "REVIEW_SCOPE_LEGACY",
+    );
+  if (approving && row.status !== "ready_for_review")
     throw new HttpError(
       409,
       "Resolve missing or conflicting evidence in a new review before approving.",
       "REVIEW_NOT_READY",
     );
-  const eligibility =
-    body.decision === "approved"
-      ? `AND (SELECT COUNT(*) FROM support_documents WHERE workspace_id=? AND ${ACTIVE} AND id IN (${marks}))=?`
-      : "";
+  const fence =
+    approving && policyScope ? scopeFence(workspace.id, policyScope) : null;
   const bindings: unknown[] = [
     body.decision,
     note,
@@ -333,29 +345,48 @@ export async function reviewRoutes(
     workspace.id,
     user.id,
   ];
-  if (body.decision === "approved")
-    bindings.push(workspace.id, ...documentIds, documentIds.length);
+  if (fence) bindings.push(...fence.params);
   const changed = await mutate(
     scope,
     db
       .prepare(
         `UPDATE support_reviews SET decision=?,decision_note=?,decided_by=?,decided_at=datetime('now'),revision=revision+1
-    WHERE id=? AND workspace_id=? AND revision=? AND ${membershipGuard()} ${eligibility}`,
+    WHERE id=? AND workspace_id=? AND revision=? AND ${membershipGuard()}${fence ? ` AND ${fence.sql}` : ""}`,
       )
       .bind(...bindings),
     `review.${body.decision}`,
     row.id,
-    { note, revision: Number(body.expectedRevision) + 1 },
+    approving
+      ? { note, revision, attestation: body.attestation, policyScope }
+      : { note, revision },
+    approving && policyScope
+      ? [
+          // Immutable record that a person, not the model, accepted this draft.
+          db
+            .prepare(
+              `INSERT INTO review_attestations(id,review_id,workspace_id,decided_by,revision,policy_applicability_confirmed,account_facts_checked,evidence_inspected,policy_scope_json)
+        SELECT ?,?,?,?,?,1,1,1,? WHERE changes()=1 AND EXISTS(SELECT 1 FROM support_reviews WHERE id=? AND workspace_id=? AND decision='approved' AND decided_by=? AND revision=?)`,
+            )
+            .bind(
+              crypto.randomUUID(),
+              row.id,
+              workspace.id,
+              user.id,
+              revision,
+              JSON.stringify(policyScope),
+              row.id,
+              workspace.id,
+              user.id,
+              revision,
+            ),
+        ]
+      : [],
   );
   if (!changed)
     throw new HttpError(
       409,
-      "The review, policies or permissions changed. Refresh before deciding.",
+      "The review, the workspace's active policies or your permissions changed. Refresh before deciding.",
       "DECISION_CONFLICT",
     );
-  return {
-    ok: true,
-    decision: body.decision,
-    revision: Number(body.expectedRevision) + 1,
-  };
+  return { ok: true, decision: body.decision, revision };
 }

@@ -2,8 +2,8 @@
 
 ## What users can do
 
-1. In **AI support chat**, select 1–10 active approved policy versions and ask a question. The model produces a draft; the existing checker evaluates its sentences before the answer is shown. **Open claim review** shows exact supporting/contradicting quotes and the usual human decision controls. Nothing is sent to customers.
-2. Ask a follow-up or choose **Continue conversation** on a saved turn. Up to six previous turns supply context. Start a **New conversation** to clear the parent. Current selected policies are the evidence for every new turn.
+1. In **AI support chat**, ask a question against every active approved policy in the bounded workspace policy set. The model produces a draft; the existing checker evaluates its sentences before the answer is shown. **Open claim review** shows exact supporting/contradicting quotes and the usual human decision controls. Nothing is sent to customers.
+2. Ask a follow-up or choose **Continue conversation** on a saved turn. Up to six previous turns supply context. Start a **New conversation** to clear the parent. The active policy set remains the evidence scope for every new turn; a policy change may require restarting after a corpus-conflict response.
 3. In **Links & media**, save a bookmark or upload a file with title/context. New items are drafts. An owner/admin inspects and approves them; team authors need a different administrator. Save a new item to change immutable metadata.
 4. Open a saved review and choose **Add supporting reference**. Enter an explanation of which claim it supports and click **Attach to review** on an approved reference. Open the review again to see the attachment or export it with the review JSON. Up to 20 references attach to one review.
 
@@ -11,7 +11,7 @@ Approval of a reference records a person's inspection. It does not establish uni
 
 ## Free-only production and local media
 
-Production media uploads are disabled. R2's free allowance can incur overage charges, so activating a subscription or creating a remote bucket is outside the [free-only policy](FREE_TIER_POLICY.md). Hosted users can save, approve and attach links to approved company resources. Chat and AI review require verification of the existing Workers Free plan; the UI explains a pause until that check is recorded.
+Production media uploads are disabled. R2's free allowance can incur overage charges, so activating a subscription or creating a remote bucket is outside the [free-only policy](FREE_TIER_POLICY.md). Hosted users can save, approve and attach links to approved company resources. Chat and AI review require verification of the existing Workers Free plan and a TOTP-verified team session; the UI explains a pause until those checks are recorded.
 
 The existing file workflow remains testable with simulated local R2. To try it without activating a cloud storage subscription:
 
@@ -40,6 +40,6 @@ Metadata reserves capacity before object upload. On a handled upload failure, th
 
 This release is implemented for controlled pilots with private workspace chat, bookmarks and media, human approval and audit history. It adds automated tests for access, retries, invalid media, upload failures, quotas, archived policies and revoked memberships. A separate local workerd/D1/R2 run passed signup, multipart PDF upload, reference approval and exact-byte private download using the actual runtime bindings. The browser workflow tests actual form submission, chat follow-up, claim review, link attachment and PDF download through the production API handler and SQLite, with controlled AI and an in-memory R2 contract fixture.
 
-CI or a merge does not prove live model accuracy, R2 configuration or deployment. After deployment, verify API version 8 with `free_tier_policy`, `evidence_store` and `ai_chat`, confirm the account Free plan, `aiAvailable:true` and `mediaAvailable:false`, then run signed-in hosted tests with actual Workers AI and both pilot accounts. Test file operations separately in the local emulator. Broader enterprise readiness still requires identity controls, customer-specific data integrations, operational recovery/retention, monitoring and independent security review.
+CI or a merge does not prove live model accuracy, R2 configuration or deployment. After deployment, verify API version 9 with `free_tier_policy`, `evidence_store`, `ai_chat`, `full_policy_scope`, `shared_ai_capacity` and `totp_mfa`, confirm the account Free plan, `aiAvailable:true`, `mfaAvailable:true` and `mediaAvailable:false`, then run signed-in hosted tests with actual Workers AI and both pilot accounts. Test file operations separately in the local emulator. Broader enterprise readiness still requires identity controls, customer-specific data integrations, operational recovery/retention, monitoring and independent security review.
 
 For every following PR, report the user-visible changes and workflow, checks passed/failed, remaining product risks, merge status, and actual deployment version separately. Use concrete evidence rather than a generic readiness score.
