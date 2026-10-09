@@ -27,17 +27,26 @@ export async function verifyDeployment(baseUrl, fetcher = fetch) {
   if (
     health.service !== "veriq-api" ||
     health.mode !== "support_review" ||
-    health.v < 6 ||
+    health.v < 7 ||
     ![
       "workspaces",
       "pilot_feedback",
       "sample_demo",
       "evidence_store",
       "ai_chat",
+      "free_tier_policy",
     ].every((f) => health.features?.includes(f))
   )
     throw new Error(
       "The API is an older release. Deploy the support-review API and web app together.",
+    );
+  if (
+    health.billingMode !== "free_only" ||
+    health.aiAvailable !== true ||
+    health.mediaAvailable !== false
+  )
+    throw new Error(
+      "Free-only demo is not ready: verify the Workers Free plan and enable AI, keeping production media disabled. Health reflects operator configuration; verify billing in Cloudflare separately.",
     );
   const auth = await get("/api/auth/me");
   if (
@@ -61,7 +70,8 @@ export async function verifyDeployment(baseUrl, fetcher = fetch) {
     !html.includes("feedback-dialog") ||
     !html.includes("demo-scenario") ||
     !html.includes("evidence-form") ||
-    !html.includes("chat-form")
+    !html.includes("chat-form") ||
+    !html.includes("billing-status")
   )
     throw new Error(
       "The deployed frontend does not contain this release’s workspace/demo/feedback interface.",
@@ -76,6 +86,8 @@ export async function verifyDeployment(baseUrl, fetcher = fetch) {
     origin: origin.origin,
     apiVersion: health.v,
     features: health.features,
+    billingMode: health.billingMode,
+    aiAvailable: health.aiAvailable,
     mediaAvailable: !!health.mediaAvailable,
   };
 }

@@ -4,6 +4,10 @@ compatibility_date = "2026-09-01"
 
 [vars]
 API_BASE_URL = "https://veriq-api.workers.dev"
+# Keep false until the existing account's Workers Free plan is verified.
+# This is an operator attestation, not an automatic check of account billing.
+WORKERS_FREE_PLAN_CONFIRMED = "false"
+LOCAL_MEDIA_DEMO = "false"
 
 # --- bindings (provisioned 2026-10-02) ---
 [[d1_databases]]
@@ -15,12 +19,8 @@ database_id = "180710a2-bbc6-41cc-9203-7df4c3852cb0"
 binding = "CACHE"
 id = "2be846dc543641cb93e12c4772c3f172"
 
-# Private media: after activating R2, create a PRIVATE bucket and uncomment.
-# No r2.dev public URL or public custom domain should be enabled.
-# [[r2_buckets]]
-# binding = "MEDIA"
-# bucket_name = "veriq-media"
-# See docs/EVIDENCE_CHAT.md for local/staging/production provisioning.
+# Production R2 is excluded: its free allowance can bill overages.
+# Local emulator media setup only: docs/EVIDENCE_CHAT.md.
 
 [ai]
 binding = "AI"

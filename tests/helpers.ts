@@ -73,6 +73,9 @@ export async function fixture(ai = fakeAI()) {
     DB: db,
     AI: ai,
     WEB_ORIGIN: "http://localhost:8788",
+    // Controlled fixtures only: these do not assert any real account's billing plan.
+    WORKERS_FREE_PLAN_CONFIRMED: "true",
+    LOCAL_MEDIA_DEMO: "true",
     CACHE: {
       async get(key: string) {
         return map.get(key) ?? null;

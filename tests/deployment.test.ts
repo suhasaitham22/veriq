@@ -5,13 +5,17 @@ const health = {
   ok: true,
   service: "veriq-api",
   mode: "support_review",
-  v: 6,
+  v: 7,
+  billingMode: "free_only",
+  aiAvailable: true,
+  mediaAvailable: false,
   features: [
     "workspaces",
     "pilot_feedback",
     "sample_demo",
     "evidence_store",
     "ai_chat",
+    "free_tier_policy",
   ],
 };
 function responses(extra: any = {}) {
@@ -31,7 +35,7 @@ function responses(extra: any = {}) {
         extra.receipt ?? Response.json({ error: "Retired" }, { status: 410 })
       );
     return new Response(
-      "workspace-select feedback-dialog demo-scenario evidence-form chat-form",
+      "workspace-select feedback-dialog demo-scenario evidence-form chat-form billing-status",
       {
         headers: { "content-security-policy": "script-src 'self'" },
       },
@@ -43,7 +47,7 @@ test("release check validates the deployed API, private access, retired sharing 
     "https://demo.example.test",
     responses(),
   );
-  assert.equal(result.apiVersion, 6);
+  assert.equal(result.apiVersion, 7);
 });
 test("release check rejects an HTML SPA fallback instead of treating HTTP 200 as success", async () => {
   await assert.rejects(
@@ -76,4 +80,18 @@ test("release check rejects an old API and publicly accessible private routes", 
     ),
     /public receipt/,
   );
+});
+test("release check refuses a company demo with paused AI or production media enabled", async () => {
+  for (const patch of [
+    { aiAvailable: false },
+    { mediaAvailable: true },
+    { billingMode: "paid" },
+  ])
+    await assert.rejects(
+      verifyDeployment(
+        "https://demo.example.test",
+        responses({ health: Response.json({ ...health, ...patch }) }),
+      ),
+      /Free-only demo is not ready/,
+    );
 });

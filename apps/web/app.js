@@ -18,6 +18,7 @@ let user,
   workspaces = [],
   selected = new Set(),
   busy = false,
+  aiAvailable = false,
   epoch = 0,
   current = null,
   overviewSequence = 0,
@@ -40,6 +41,7 @@ const tools = workspaceTools({
   workspace: () => workspace,
   user: () => user,
   epoch: () => epoch,
+  aiAvailable: () => aiAvailable,
 });
 
 function el(tag, text, cls) {
@@ -95,7 +97,7 @@ function controls() {
   $("document-fields").disabled = busy || !writer();
   $("member-fields").disabled = busy || !admin() || !!workspace?.is_personal;
   $("input").disabled = busy || !writer();
-  $("go").disabled = busy || !writer();
+  $("go").disabled = busy || !writer() || !aiAvailable;
   $("load-example").disabled = busy || !writer();
   document
     .querySelectorAll("[data-admin]")
@@ -1005,16 +1007,27 @@ controls();
     const health = await api("/api/health");
     if (
       health.mode !== "support_review" ||
-      health.v < 6 ||
-      !["pilot_feedback", "evidence_store", "ai_chat"].every((f) =>
-        health.features?.includes(f),
-      )
+      health.v < 7 ||
+      health.billingMode !== "free_only" ||
+      ![
+        "pilot_feedback",
+        "evidence_store",
+        "ai_chat",
+        "free_tier_policy",
+      ].every((f) => health.features?.includes(f))
     )
       throw new Error(
         "The deployed API is older than this app. Apply migrations and deploy the API and Pages together before the demo.",
       );
 
-    tools.media(health.mediaAvailable);
+    aiAvailable = health.aiAvailable === true;
+    msg(
+      "billing-status",
+      aiAvailable
+        ? "Free-only pilot. AI stops at the provider’s free daily limit. Production media uploads are disabled."
+        : "AI is paused until an administrator verifies the Cloudflare Free plan. Documents, links and saved history remain available. Production media uploads are disabled.",
+    );
+    tools.media(health.mediaAvailable === true);
     user = (await api("/api/auth/me")).user;
     $("who").textContent = user.email;
     $("avatar").textContent = user.email[0].toUpperCase();

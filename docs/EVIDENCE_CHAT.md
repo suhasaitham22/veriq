@@ -9,19 +9,26 @@
 
 Approval of a reference records a person's inspection. It does not establish universal truth or override missing/contradicting AI evidence. Bookmark URLs are never fetched; remote pages may change. Media is stored, not interpreted: OCR, transcription, malware scanning and automated media claim verification are not implemented. Downloads are forced attachments rather than inline executable content.
 
-## Private R2 setup
+## Free-only production and local media
 
-The existing Cloudflare account must have R2 enabled. This can require a payment method; the code does not activate a paid service or create a production bucket automatically. Links and chat operate without R2. Health returns `mediaAvailable:false`, the UI disables media uploads and the endpoint returns a clear 503.
+Production media uploads are disabled. R2's free allowance can incur overage charges, so activating a subscription or creating a remote bucket is outside the [free-only policy](FREE_TIER_POLICY.md). Hosted users can save, approve and attach links to approved company resources. Chat and AI review require verification of the existing Workers Free plan; the UI explains a pause until that check is recorded.
 
-After activating R2 through the account's normal process, an authenticated operator can create the bucket:
+The existing file workflow remains testable with simulated local R2. To try it without activating a cloud storage subscription:
 
-```sh
-npx wrangler r2 bucket create veriq-media
+1. Copy `apps/api/wrangler.toml` to `apps/api/wrangler.local.toml` (ignored by Git).
+2. Set `LOCAL_MEDIA_DEMO = "true"` in that copy's `[vars]` section. Append this top-level block after `[ai]`:
+
+```toml
+[[r2_buckets]]
+binding = "MEDIA"
+bucket_name = "veriq-local-media"
+remote = false
 ```
 
-Uncomment the `[[r2_buckets]]` block in `apps/api/wrangler.toml` with binding `MEDIA` and the actual private bucket name. Keep the bucket's public development URL and public custom domains disabled. The API serves downloads only after session/workspace authorization. For staging use a different bucket and database; never point staging uploads at production.
+3. Run `npx wrangler d1 migrations apply veriq-db --local --config apps/api/wrangler.local.toml` and `npx wrangler dev --local --config apps/api/wrangler.local.toml --port 8787 --var WEB_ORIGIN:http://localhost:8788`. Run `npm run dev:web` separately.
+4. Use HTTP localhost for the API. Never add a remote R2 binding, deploy this local configuration or activate R2 checkout. AI remains paused by default: a local Workers AI binding can still use remote inference, so it also requires a verified Free account before enabling.
 
-With that binding in the local configuration, `wrangler dev` uses local R2 storage by default. Do not set `remote = true` for local demo uploads. Run local D1 migrations through 0005, start the API/Pages servers and test upload/download. Existing commands are in the README. Production requires the coordinated authenticated deployment in [COMPANY_DEMO.md](COMPANY_DEMO.md), including migration 0005 and both API/Pages workers.
+Production ignores `MEDIA` even if a bucket is accidentally bound. Health returns `mediaAvailable:false`, upload/download fail without storage IO, and the UI keeps links usable. Existing media metadata remains visible but its bytes are unavailable in a hosted free-only release. Keep any previously stored objects intact; this change does not delete them or cancel existing account subscriptions.
 
 Official contracts: [R2 Worker binding and operations](https://developers.cloudflare.com/r2/api/workers/workers-api-reference/), [R2 bucket privacy](https://developers.cloudflare.com/r2/buckets/public-buckets/), [Wrangler R2 commands](https://developers.cloudflare.com/workers/wrangler/commands/r2/), [Workers AI model](https://developers.cloudflare.com/workers-ai/models/gpt-oss-20b/). The existing direct Workers AI binding is retained; no new AI-provider credential or framework migration is required.
 
@@ -33,6 +40,6 @@ Metadata reserves capacity before object upload. On a handled upload failure, th
 
 This release is implemented for controlled pilots with private workspace chat, bookmarks and media, human approval and audit history. It adds automated tests for access, retries, invalid media, upload failures, quotas, archived policies and revoked memberships. A separate local workerd/D1/R2 run passed signup, multipart PDF upload, reference approval and exact-byte private download using the actual runtime bindings. The browser workflow tests actual form submission, chat follow-up, claim review, link attachment and PDF download through the production API handler and SQLite, with controlled AI and an in-memory R2 contract fixture.
 
-CI or a merge does not prove live model accuracy, R2 configuration or deployment. After deployment, verify API version 6 with `evidence_store` and `ai_chat`, inspect `mediaAvailable`, then run signed-in tests with actual Workers AI/R2 and both pilot accounts. Broader enterprise readiness still requires identity controls, customer-specific data integrations, operational recovery/retention, monitoring and independent security review.
+CI or a merge does not prove live model accuracy, R2 configuration or deployment. After deployment, verify API version 7 with `free_tier_policy`, `evidence_store` and `ai_chat`, confirm the account Free plan, `aiAvailable:true` and `mediaAvailable:false`, then run signed-in hosted tests with actual Workers AI and both pilot accounts. Test file operations separately in the local emulator. Broader enterprise readiness still requires identity controls, customer-specific data integrations, operational recovery/retention, monitoring and independent security review.
 
 For every following PR, report the user-visible changes and workflow, checks passed/failed, remaining product risks, merge status, and actual deployment version separately. Use concrete evidence rather than a generic readiness score.

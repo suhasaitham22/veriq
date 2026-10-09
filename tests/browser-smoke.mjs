@@ -587,6 +587,49 @@ try {
     true,
   );
   await staleContext.close();
+  const pausedContext = await browser.newContext({
+    storageState: await page.context().storageState(),
+  });
+  const pausedPage = await pausedContext.newPage();
+  await pausedPage.route("**/api/health", async (route) => {
+    const response = await route.fetch();
+    await route.fulfill({
+      response,
+      json: {
+        ...(await response.json()),
+        aiAvailable: false,
+        mediaAvailable: false,
+      },
+    });
+  });
+  await pausedPage.goto(`${origin}/app.html`);
+  await pausedPage
+    .locator("#billing-status")
+    .getByText(/AI is paused/)
+    .waitFor();
+  await pausedPage
+    .locator("#workspace-name")
+    .getByText("Enterprise support", { exact: true })
+    .waitFor();
+  assert.equal(await pausedPage.locator("#go").isDisabled(), true);
+  assert.equal(await pausedPage.locator("#workspace-select").isEnabled(), true);
+  await pausedPage
+    .getByRole("button", { name: "AI support chat", exact: true })
+    .click();
+  assert.equal(await pausedPage.locator("#chat-question").isDisabled(), true);
+  await pausedPage
+    .getByRole("button", { name: "Links & media", exact: true })
+    .click();
+  await pausedPage
+    .locator("#media-availability")
+    .getByText(/free-only policy/)
+    .waitFor();
+  assert.equal(await pausedPage.locator("#evidence-file").isDisabled(), true);
+  assert.equal(
+    await pausedPage.locator("#evidence-kind option[value=media]").isDisabled(),
+    true,
+  );
+  await pausedContext.close();
   console.log(
     "Browser smoke passed: AI chat, follow-up, claim review, link approval/attachment, private media upload/download, safe reference rendering, signup, sample setup/scenarios, feedback collection/export/access, stale-release guard, approved document, contradictory/supported/missing evidence, history, edit invalidation, text import, safe rendering, archival, mobile layout, shared workspace, two-person approval, human decision, export, audit, role downgrade, logout and login.",
   );
