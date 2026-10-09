@@ -5,7 +5,7 @@ const health = {
   ok: true,
   service: "veriq-api",
   mode: "support_review",
-  v: 7,
+  v: 8,
   billingMode: "free_only",
   aiAvailable: true,
   mediaAvailable: false,
@@ -16,12 +16,21 @@ const health = {
     "evidence_store",
     "ai_chat",
     "free_tier_policy",
+    "usage_status",
   ],
 };
 function responses(extra: any = {}) {
   return async (url: any) => {
     const path = new URL(url).pathname;
     if (path === "/api/health") return extra.health ?? Response.json(health);
+    if (path === "/request.js")
+      return (
+        extra.transport ??
+        new Response(
+          "export function requestJSON() { return new AbortController(); }",
+          { headers: { "content-type": "text/javascript" } },
+        )
+      );
     if (path === "/api/auth/me")
       return (
         extra.auth ??
@@ -35,7 +44,7 @@ function responses(extra: any = {}) {
         extra.receipt ?? Response.json({ error: "Retired" }, { status: 410 })
       );
     return new Response(
-      "workspace-select feedback-dialog demo-scenario evidence-form chat-form billing-status",
+      "workspace-select feedback-dialog demo-scenario evidence-form chat-form billing-status usage-status",
       {
         headers: { "content-security-policy": "script-src 'self'" },
       },
@@ -47,7 +56,16 @@ test("release check validates the deployed API, private access, retired sharing 
     "https://demo.example.test",
     responses(),
   );
-  assert.equal(result.apiVersion, 7);
+  assert.equal(result.apiVersion, 8);
+});
+test("release check rejects a missing JavaScript module hidden by an HTML fallback", async () => {
+  await assert.rejects(
+    verifyDeployment(
+      "https://demo.example.test",
+      responses({ transport: new Response("<html>old app</html>") }),
+    ),
+    /request module is missing/,
+  );
 });
 test("release check rejects an HTML SPA fallback instead of treating HTTP 200 as success", async () => {
   await assert.rejects(

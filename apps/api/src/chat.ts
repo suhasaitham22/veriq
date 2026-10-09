@@ -6,7 +6,9 @@ import {
   page,
   nextCursor,
   rateLimit,
+  windowRetryAfter,
 } from "./http.ts";
+import { DAILY_LIMITS } from "./usage.ts";
 import { requireRole, WRITERS, membershipGuard, mutate } from "./workspaces.ts";
 import type { Scope } from "./workspaces.ts";
 import { ACTIVE } from "./documents.ts";
@@ -179,11 +181,12 @@ export async function chatRoutes(
   try {
     let answer = turn.answer;
     if (!answer) {
-      if (!(await rateLimit(db, `chat:${user.id}`, 50, 86400)))
+      if (!(await rateLimit(db, `chat:${user.id}`, DAILY_LIMITS.chat, 86400)))
         throw new HttpError(
           429,
-          "Daily AI chat generation limit reached.",
+          "Daily AI chat generation limit reached. The app allowance resets at midnight UTC.",
           "CHAT_LIMIT",
+          windowRetryAfter(86400),
         );
       try {
         const output = await withTimeout(

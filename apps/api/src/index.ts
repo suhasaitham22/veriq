@@ -10,6 +10,7 @@ import { reviewRoutes } from "./reviews.ts";
 import { pilotRoutes } from "./pilot.ts";
 import { evidenceRoutes } from "./evidence.ts";
 import { chatRoutes } from "./chat.ts";
+import { usageStatus } from "./usage.ts";
 export interface Env {
   MEDIA?: R2Bucket;
   AI: AIClient;
@@ -40,7 +41,7 @@ export default {
       "access-control-allow-methods": "GET, POST, OPTIONS",
       "access-control-allow-headers":
         "content-type, x-workspace-id, idempotency-key",
-      "access-control-expose-headers": "x-request-id",
+      "access-control-expose-headers": "x-request-id, retry-after",
       vary: "Origin",
       "cache-control": "no-store",
       "x-request-id": requestId,
@@ -66,7 +67,7 @@ export default {
           {
             ok: true,
             service: "veriq-api",
-            v: 7,
+            v: 8,
             mode: "support_review",
             features: [
               "workspaces",
@@ -75,6 +76,7 @@ export default {
               "evidence_store",
               "ai_chat",
               "free_tier_policy",
+              "usage_status",
             ],
             billingMode: "free_only",
             aiAvailable,
@@ -120,7 +122,7 @@ export default {
           headers,
         );
       if (
-        !/^\/api\/(documents|reviews|demo|feedback|evidence|chat)(?:\/|$)/.test(
+        !/^\/api\/(documents|reviews|demo|feedback|evidence|chat|usage)(?:\/|$)/.test(
           url.pathname,
         )
       )
@@ -130,6 +132,8 @@ export default {
         user,
         req.headers.get("x-workspace-id"),
       );
+      if (req.method === "GET" && url.pathname === "/api/usage")
+        return json(await usageStatus(scope), 200, headers);
       if (
         req.method === "POST" &&
         ["/api/reviews", "/api/chat"].includes(url.pathname) &&
@@ -180,7 +184,9 @@ export default {
           error.status,
           {
             ...headers,
-            ...(error.status === 429 ? { "retry-after": "60" } : {}),
+            ...(error.status === 429
+              ? { "retry-after": String(error.retryAfter ?? 60) }
+              : {}),
           },
         );
       if (error instanceof InputError)

@@ -55,6 +55,12 @@ R2 keys remain server-side. Downloads resolve membership, obtain the private obj
 
 The [free-only policy](FREE_TIER_POLICY.md) defaults AI generation to paused pending an operator's verification of the existing Workers Free account. The attestation flag is not an account billing API. Production ignores all media bindings; HTTP loopback plus an explicit local-demo flag permits simulated R2 only. No paid fallback, R2 activation or account upgrade is part of this deployment. Saved history and policy/link workflows remain available when AI is paused. Health capabilities and the UI agree on these restrictions.
 
+## Bounded requests and quota visibility
+
+All browser API calls share `request.js`, including auth, media and private downloads. Ordinary requests have a 30-second deadline; review/chat use 120 seconds to cover generation plus checking. The abort signal remains active through body consumption. Errors preserve status/code, retry timing and safe request references. No automatic retry is performed: a lost mutation response can represent committed work. Existing review/chat retry keys are retained in the open page after failure and unchanged input reuses them. Other mutations require inspection of saved records before resubmission; reload does not preserve pending keys.
+
+`GET /api/usage` reads the signed-in account's review and generation attempt counters, shared across its workspaces, and returns a UTC reset. It requires workspace membership, is non-cacheable, and does not expose other members' usage. The UI refreshes after generation attempts and on workspace selection, with sequences/epochs guarding stale responses. It remains usable when AI is paused. Counts are app limits, not remaining Cloudflare neurons. Daily review/chat 429 responses report seconds until the next UTC day instead of an inaccurate one-minute wait.
+
 ## Verification and limits
 
 Automated tests execute production SQL through SQLite and the production API handler. Browser tests use the same handler, persisted state and controlled model replies across two accounts. Coverage includes workspace isolation, roles, two-person approval, expiry, migration preservation, immutable records, audit rollback, retry races, stale permissions, optimistic decisions, exports, session revocation, quote validation, model failures, safe rendering and responsive layouts.

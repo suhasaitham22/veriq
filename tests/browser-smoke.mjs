@@ -139,8 +139,37 @@ try {
   await page
     .getByRole("button", { name: "Load scenario", exact: true })
     .click();
+  const reviewRetryKeys = [];
+  const dropReviewResponse = async (route) => {
+    if (route.request().method() !== "POST") return route.continue();
+    reviewRetryKeys.push(route.request().headers()["idempotency-key"]);
+    if (reviewRetryKeys.length === 1) {
+      const response = await route.fetch();
+      assert.equal(response.status(), 201);
+      await route.abort("failed");
+    } else await route.continue();
+  };
+  await page.route("**/api/reviews", dropReviewResponse);
+  await page.getByRole("button", { name: "Review draft", exact: true }).click();
+  await page
+    .locator("#status")
+    .getByText(/Retry without changing/)
+    .waitFor();
+  assert.equal(await page.locator("#go").isEnabled(), true);
   await page.getByRole("button", { name: "Review draft", exact: true }).click();
   await page.locator("#results .ready_for_review").waitFor();
+  await page.unroute("**/api/reviews", dropReviewResponse);
+  assert.equal(reviewRetryKeys.length, 2);
+  assert.ok(reviewRetryKeys[0]);
+  assert.equal(reviewRetryKeys[0], reviewRetryKeys[1]);
+  assert.equal(
+    f.sqlite.prepare("SELECT COUNT(*) AS n FROM support_reviews").get().n,
+    1,
+  );
+  await page
+    .locator("#usage-status")
+    .getByText(/49 of 50 reviews/)
+    .waitFor();
   await page
     .getByRole("button", { name: "AI support chat", exact: true })
     .click();
@@ -150,6 +179,30 @@ try {
     )
     .check();
   await page.getByLabel("Support question").fill("What is the refund window?");
+  const chatRetryKeys = [];
+  const dropChatResponse = async (route) => {
+    if (route.request().method() !== "POST") return route.continue();
+    chatRetryKeys.push(route.request().headers()["idempotency-key"]);
+    if (chatRetryKeys.length === 1) {
+      const response = await route.fetch();
+      assert.equal(response.status(), 201);
+      await route.abort("failed");
+    } else await route.continue();
+  };
+  await page.route("**/api/chat", dropChatResponse);
+  await page
+    .getByRole("button", { name: "Generate and check answer", exact: true })
+    .click();
+  await page
+    .locator("#chat-status")
+    .getByText(/Retry without changing/)
+    .waitFor();
+  assert.equal(
+    await page
+      .getByRole("button", { name: "Generate and check answer", exact: true })
+      .isEnabled(),
+    true,
+  );
   await page
     .getByRole("button", { name: "Generate and check answer", exact: true })
     .click();
@@ -157,6 +210,18 @@ try {
     .getByText(
       "Draft saved with a claim review. A person still decides whether to send.",
     )
+    .waitFor();
+  await page.unroute("**/api/chat", dropChatResponse);
+  assert.equal(chatRetryKeys.length, 2);
+  assert.ok(chatRetryKeys[0]);
+  assert.equal(chatRetryKeys[0], chatRetryKeys[1]);
+  assert.equal(
+    f.sqlite.prepare("SELECT COUNT(*) AS n FROM chat_turns").get().n,
+    1,
+  );
+  await page
+    .locator("#usage-status")
+    .getByText(/48 of 50 reviews and 49 of 50 chat/)
     .waitFor();
   await page
     .locator("#chat-output")

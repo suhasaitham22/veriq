@@ -22,7 +22,7 @@ An operator may set this variable to `"true"` **only after verifying the existin
 
 Production ignores any `MEDIA` binding, even if added accidentally. Media operations require `LOCAL_MEDIA_DEMO="true"` and an HTTP loopback request (localhost, 127.0.0.1 or ::1). This preserves emulator demonstrations without enabling remote media operations. Local configuration must use simulated R2, never a remote binding. See [local media setup](EVIDENCE_CHAT.md).
 
-`GET /api/health` reports version 7, `billingMode:free_only`, `aiAvailable` and `mediaAvailable`. These describe application configuration; they are not proof of the account's actual subscription. The company-demo release check requires enabled AI and disabled production media, then still requires a signed-in live-AI workflow and dashboard billing verification.
+`GET /api/health` reports version 8, `billingMode:free_only`, `aiAvailable` and `mediaAvailable`. These describe application configuration; they are not proof of the account's actual subscription. The company-demo release check requires enabled AI and disabled production media, then still requires a signed-in live-AI workflow and dashboard billing verification.
 
 ## Pilot scope under this constraint
 

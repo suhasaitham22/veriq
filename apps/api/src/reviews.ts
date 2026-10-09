@@ -14,7 +14,9 @@ import {
   page,
   nextCursor,
   like,
+  windowRetryAfter,
 } from "./http.ts";
+import { DAILY_LIMITS } from "./usage.ts";
 import { WRITERS, requireRole, mutate, membershipGuard } from "./workspaces.ts";
 import type { Scope } from "./workspaces.ts";
 import { ACTIVE, snapshot } from "./documents.ts";
@@ -65,9 +67,13 @@ async function record(row: ReviewRow, db: D1Database, workspaceId: string) {
 async function quota(db: D1Database, userId: string) {
   return !!(await db
     .prepare(
-      "INSERT INTO usage(ip,day,count) VALUES(?,?,1) ON CONFLICT(ip,day) DO UPDATE SET count=count+1 WHERE count<50 RETURNING count",
+      "INSERT INTO usage(ip,day,count) VALUES(?,?,1) ON CONFLICT(ip,day) DO UPDATE SET count=count+1 WHERE count<? RETURNING count",
     )
-    .bind(`support:${userId}`, new Date().toISOString().slice(0, 10))
+    .bind(
+      `support:${userId}`,
+      new Date().toISOString().slice(0, 10),
+      DAILY_LIMITS.reviews,
+    )
     .first());
 }
 export async function reviewRoutes(
@@ -214,8 +220,9 @@ export async function reviewRoutes(
       if (!(await quota(db, user.id)))
         throw new HttpError(
           429,
-          "Daily review limit reached.",
+          "Daily review limit reached. The app allowance resets at midnight UTC.",
           "QUOTA_EXCEEDED",
+          windowRetryAfter(86400),
         );
       const review = await reviewDraft(body.draft, documents, ai);
       const id = crypto.randomUUID();

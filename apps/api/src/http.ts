@@ -2,11 +2,21 @@ import { InputError } from "./pipeline.ts";
 export class HttpError extends Error {
   status: number;
   code: string;
-  constructor(status: number, message: string, code = "REQUEST_INVALID") {
+  retryAfter?: number;
+  constructor(
+    status: number,
+    message: string,
+    code = "REQUEST_INVALID",
+    retryAfter?: number,
+  ) {
     super(message);
     this.status = status;
     this.code = code;
+    this.retryAfter = retryAfter;
   }
+}
+export function windowRetryAfter(seconds: number, now = Date.now()): number {
+  return seconds - (Math.floor(now / 1000) % seconds);
 }
 export function json(
   data: unknown,

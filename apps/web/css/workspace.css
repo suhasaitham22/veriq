@@ -231,6 +231,12 @@
   gap: 15px;
   margin: 0 0 24px;
 }
+.usage-panel {
+  margin-bottom: 20px;
+}
+.usage-panel p {
+  margin-bottom: 8px;
+}
 .metrics div {
   background: #fff;
   border: 1px solid #e1e7ef;
