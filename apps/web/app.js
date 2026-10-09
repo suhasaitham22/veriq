@@ -1,4 +1,5 @@
 import { workspaceTools } from "./workspace-tools.js";
+import { requestJSON } from "./request.js";
 const $ = (id) => document.getElementById(id);
 const labels = {
   supported: "Supported",
@@ -24,6 +25,7 @@ let user,
   overviewSequence = 0,
   memberSequence = 0,
   openSequence = 0,
+  usageSequence = 0,
   retry = null;
 const pages = new Map();
 const writer = () => ["owner", "admin", "reviewer"].includes(workspace?.role);
@@ -58,37 +60,59 @@ function time(value) {
   return new Date(value.endsWith("Z") ? value : `${value}Z`).toLocaleString();
 }
 async function api(path, body, key) {
+  const multipart = body instanceof FormData;
   const headers = {
     ...(workspace ? { "X-Workspace-ID": workspace.id } : {}),
-    ...(body !== undefined ? { "content-type": "application/json" } : {}),
+    ...(body !== undefined && !multipart
+      ? { "content-type": "application/json" }
+      : {}),
     ...(key ? { "Idempotency-Key": key } : {}),
   };
-  const res = await fetch(`${window.VERIQ_API}${path}`, {
-    credentials: "include",
-    headers,
-    ...(body === undefined
-      ? {}
-      : { method: "POST", body: JSON.stringify(body) }),
-  });
-  if (res.status === 401) {
-    location.href = "/login.html";
-    throw new Error("Your session ended. Sign in again.");
+  try {
+    return await requestJSON(`${window.VERIQ_API}${path}`, {
+      headers,
+      timeoutMs:
+        body !== undefined && ["/api/reviews", "/api/chat"].includes(path)
+          ? 120000
+          : 30000,
+      ...(body === undefined
+        ? {}
+        : { method: "POST", body: multipart ? body : JSON.stringify(body) }),
+    });
+  } catch (error) {
+    if (error.status === 401) location.href = "/login.html";
+    throw error;
+  } finally {
+    if (body !== undefined && ["/api/reviews", "/api/chat"].includes(path))
+      void refreshUsage();
   }
-  if (!res.headers.get("content-type")?.includes("application/json"))
-    throw new Error(
-      "The review API did not return JSON. Check the Pages proxy and deploy the API and web app together.",
+}
+async function refreshUsage() {
+  const version = epoch,
+    seq = ++usageSequence;
+  if (!workspace) return;
+  try {
+    const data = await api("/api/usage");
+    if (version !== epoch || seq !== usageSequence) return;
+    const resets = new Date(data.resetAt).toLocaleString();
+    msg(
+      "usage-status",
+      `Your daily app allowance: ${data.reviews.remaining} of ${data.reviews.limit} reviews and ${data.chat.remaining} of ${data.chat.limit} chat generations remaining. Shared across your workspaces. Resets ${resets} (midnight UTC).`,
     );
-  const data = await res.json();
-  if (!res.ok)
-    throw new Error(
-      `${data.error || "Request failed."}${res.status >= 500 && data.requestId ? ` Reference: ${data.requestId}` : ""}`,
-    );
-  return data;
+  } catch (error) {
+    if (version === epoch && seq === usageSequence)
+      msg(
+        "usage-status",
+        "Daily app allowance could not be loaded. Refresh usage to try again.",
+        true,
+      );
+  }
 }
 function controls() {
   tools.controls(busy);
   $("workspace-select").disabled = busy || !workspace;
   $("give-feedback").disabled = busy || !workspace;
+  $("refresh-usage").disabled = busy || !workspace;
   $("feedback-fields").disabled = busy;
   $("setup-demo").disabled = busy || !workspace?.is_personal;
   $("demo-scenario").disabled = busy || !sampleDocumentIds.length || !writer();
@@ -308,12 +332,14 @@ async function switchWorkspace(id) {
     loadDocuments(),
     loadHistory(),
     overview(),
+    refreshUsage(),
   ]);
 }
 $("workspace-select").onchange = () =>
   switchWorkspace($("workspace-select").value).catch((e) =>
     msg("global-status", e.message, true),
   );
+$("refresh-usage").onclick = refreshUsage;
 // Each list has its own sequence number so slower searches cannot replace newer results.
 async function paginate(id, path, key, renderer, append = false) {
   let state = pages.get(id) || { seq: 0, cursor: null };
@@ -1007,13 +1033,14 @@ controls();
     const health = await api("/api/health");
     if (
       health.mode !== "support_review" ||
-      health.v < 7 ||
+      health.v < 8 ||
       health.billingMode !== "free_only" ||
       ![
         "pilot_feedback",
         "evidence_store",
         "ai_chat",
         "free_tier_policy",
+        "usage_status",
       ].every((f) => health.features?.includes(f))
     )
       throw new Error(

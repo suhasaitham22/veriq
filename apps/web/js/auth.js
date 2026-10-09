@@ -1,4 +1,5 @@
 // auth.js — login/signup client. Talks to the Worker API with cookies.
+import { requestJSON } from "../request.js";
 const API = window.VERIQ_API;
 
 const $ = (id) => document.getElementById(id);
@@ -20,15 +21,12 @@ if (mode === "signup") {
 }
 
 async function api(path, body) {
-  const res = await fetch(`${API}${path}`, {
+  return requestJSON(`${API}${path}`, {
     method: "POST",
     credentials: "include",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
   });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || "request failed");
-  return data;
 }
 
 $("form").addEventListener("submit", async (e) => {
@@ -53,8 +51,8 @@ $("form").addEventListener("submit", async (e) => {
   }
 });
 
-fetch(`${API}/api/auth/me`, { credentials: "include" })
-  .then((r) => {
-    if (r.ok) location.href = "/app.html";
+requestJSON(`${API}/api/auth/me`)
+  .then(() => {
+    location.href = "/app.html";
   })
   .catch(() => {});

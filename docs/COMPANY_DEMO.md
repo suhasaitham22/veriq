@@ -34,13 +34,13 @@ Official references: [D1 migration commands](https://developers.cloudflare.com/d
 
 Expected release check:
 
-| Boundary              | Required evidence                                                                                                                                                                                      |
-| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| First-party API       | `/api/health` returns JSON, `mode:support_review`, version ≥7, `billingMode:free_only`, `aiAvailable:true`, `mediaAvailable:false` and the free-policy/demo/feedback/workspace/evidence/chat features. |
-| Private access        | Signed-out `/api/auth/me` returns 401 JSON with `Cache-Control:no-store`.                                                                                                                              |
-| Legacy public sharing | `/api/r/:id` returns 410.                                                                                                                                                                              |
-| Frontend              | Workspace selector, sample scenarios, chat/reference forms and feedback dialog are present with the Pages security headers.                                                                            |
-| Signed-in sample flow | Setup → actual AI review → evidence → human decision → saved feedback/export works.                                                                                                                    |
+| Boundary              | Required evidence                                                                                                                                                                                            |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| First-party API       | `/api/health` returns JSON, `mode:support_review`, version ≥8, `billingMode:free_only`, `aiAvailable:true`, `mediaAvailable:false` and the usage/free-policy/demo/feedback/workspace/evidence/chat features. |
+| Private access        | Signed-out `/api/auth/me` returns 401 JSON with `Cache-Control:no-store`.                                                                                                                                    |
+| Legacy public sharing | `/api/r/:id` returns 410.                                                                                                                                                                                    |
+| Frontend              | Workspace selector, sample scenarios, chat/reference forms and feedback dialog are present with the Pages security headers.                                                                                  |
+| Signed-in sample flow | Setup → actual AI review → evidence → human decision → saved feedback/export works.                                                                                                                          |
 
 ## Short demonstration
 

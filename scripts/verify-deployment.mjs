@@ -27,7 +27,7 @@ export async function verifyDeployment(baseUrl, fetcher = fetch) {
   if (
     health.service !== "veriq-api" ||
     health.mode !== "support_review" ||
-    health.v < 7 ||
+    health.v < 8 ||
     ![
       "workspaces",
       "pilot_feedback",
@@ -35,6 +35,7 @@ export async function verifyDeployment(baseUrl, fetcher = fetch) {
       "evidence_store",
       "ai_chat",
       "free_tier_policy",
+      "usage_status",
     ].every((f) => health.features?.includes(f))
   )
     throw new Error(
@@ -71,7 +72,8 @@ export async function verifyDeployment(baseUrl, fetcher = fetch) {
     !html.includes("demo-scenario") ||
     !html.includes("evidence-form") ||
     !html.includes("chat-form") ||
-    !html.includes("billing-status")
+    !html.includes("billing-status") ||
+    !html.includes("usage-status")
   )
     throw new Error(
       "The deployed frontend does not contain this release’s workspace/demo/feedback interface.",
@@ -81,6 +83,17 @@ export async function verifyDeployment(baseUrl, fetcher = fetch) {
   )
     throw new Error(
       "The frontend security headers are missing. Deploy the Pages worker as well as the static files.",
+    );
+  const transport = await get("/request.js");
+  const transportScript = await transport.text();
+  if (
+    transport.status !== 200 ||
+    !transport.headers.get("content-type")?.includes("javascript") ||
+    !transportScript.includes("requestJSON") ||
+    !transportScript.includes("AbortController")
+  )
+    throw new Error(
+      "The bounded request module is missing. Deploy all matching frontend files, including request.js.",
     );
   return {
     origin: origin.origin,

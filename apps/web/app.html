@@ -84,6 +84,18 @@
           role="status"
           aria-live="polite"
         ></p>
+        <section class="usage-panel card" aria-label="Daily app allowance">
+          <p id="usage-status" class="small" role="status" aria-live="polite">
+            Loading daily app allowance…
+          </p>
+          <p class="small">
+            These are app attempt limits, not Cloudflare’s shared AI allowance.
+            Provider limits may stop AI earlier.
+          </p>
+          <button id="refresh-usage" class="btn btn-ghost btn-sm">
+            Refresh usage
+          </button>
+        </section>
         <section class="metrics" aria-label="Workspace overview">
           <div>
             <span>Active policies</span><strong id="metric-active">—</strong>

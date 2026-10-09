@@ -92,39 +92,46 @@ npm run format:check
 
 GitHub Actions runs these on pull requests and feature branches. AI fixtures are controlled: these tests verify behavior and integration, not production model accuracy. See [evaluation](docs/EVALUATION.md) for the required real-policy pilot.
 
+## Request recovery and daily allowance
+
+Browser requests have deadlines: 30 seconds for ordinary API/file operations and 120 seconds for review/chat generation and checking, including response-body reads. A timeout does not prove the server cancelled its work. The app does not retry automatically. Retry an unchanged review/chat message in the same open page to reuse its existing key and recover a committed result. For other mutations, inspect saved records before submitting again. Pending retry keys are not retained after reload or closing the page.
+
+The workspace shows remaining review/chat attempts across your account, with a reset time and refresh control. These are app quotas, not Cloudflare neuron usage or a guarantee that the provider allowance remains available. Daily-limit responses report the actual next midnight UTC in `Retry-After`. Provider exhaustion can stop AI earlier; the app does not enable paid fallbacks.
+
 ## API
 
 Private routes require the `veriq_session` cookie. Set `X-Workspace-ID` to a workspace you belong to; omitting it uses your personal workspace. Read lists accept `limit` (1–100, default 25), `cursor`, and supported filters. Follow `nextCursor` until it is null.
 
-| Route                                      | Purpose                                                                        |
-| ------------------------------------------ | ------------------------------------------------------------------------------ |
-| `POST /api/chat`                           | Generate/check `{question,documentIds,parentId?}`; required `Idempotency-Key`. |
-| `GET /api/chat`                            | Paginated completed workspace chat turns.                                      |
-| `GET /api/chat/:id`                        | Saved question/answer and linked claim review.                                 |
-| `GET /api/evidence`                        | Search/filter private reference metadata with `q`, `kind`, `status`.           |
-| `POST /api/evidence/links`                 | Save `{title,url,note}` as an immutable draft bookmark.                        |
-| `POST /api/evidence/media`                 | Local emulator only: bounded multipart `{title,note,file}`.                    |
-| `POST /api/evidence/:id/approve`           | Approve an inspected reference (owner/admin, two-person teams).                |
-| `POST /api/evidence/:id/archive`           | Retain historical attachments; exclude future attachment.                      |
-| `POST /api/evidence/:id/attach`            | Attach an approved reference with `{reviewId,note}`.                           |
-| `GET /api/evidence/:id/download`           | Local emulator only: authenticated, non-cacheable file attachment.             |
-| `GET /api/workspaces`                      | List memberships and roles.                                                    |
-| `POST /api/workspaces`                     | Create a team workspace with `{name}`.                                         |
-| `GET /api/workspaces/:id/overview`         | Active policies, drafts, pending decisions and members.                        |
-| `GET /api/workspaces/:id/members`          | List members (owner/admin).                                                    |
-| `POST /api/workspaces/:id/members`         | Add `{email, role}` from registered accounts.                                  |
-| `POST /api/workspaces/:id/members/:userId` | Change `{role}` or remove with `{remove:true}`.                                |
-| `GET /api/workspaces/:id/audit`            | Paginated administrative audit events.                                         |
-| `POST /api/documents`                      | Save `{title,version,content,sourceUrl?,validFrom?,validUntil?}` as draft.     |
-| `GET /api/documents`                       | Metadata list; filters `q`, `status`.                                          |
-| `GET /api/documents/:id`                   | Read the immutable text.                                                       |
-| `POST /api/documents/:id/approve`          | Approve a draft policy.                                                        |
-| `POST /api/documents/:id/archive`          | Exclude a version from future reviews.                                         |
-| `POST /api/reviews`                        | Review `{draft,documentIds}`.                                                  |
-| `GET /api/reviews`                         | Review queue; filters `q`, `decision`.                                         |
-| `GET /api/reviews/:id`                     | Read evidence, decision, revision and current policy eligibility.              |
-| `POST /api/reviews/:id/decision`           | Record `{decision:'approved'                                                   | 'rejected',note,expectedRevision}`. |
-| `GET /api/reviews/:id/export`              | Private evidence JSON download.                                                |
+| Route                                      | Purpose                                                                         |
+| ------------------------------------------ | ------------------------------------------------------------------------------- |
+| `GET /api/usage`                           | Private account-wide review/chat counts, remaining attempts and next UTC reset. |
+| `POST /api/chat`                           | Generate/check `{question,documentIds,parentId?}`; required `Idempotency-Key`.  |
+| `GET /api/chat`                            | Paginated completed workspace chat turns.                                       |
+| `GET /api/chat/:id`                        | Saved question/answer and linked claim review.                                  |
+| `GET /api/evidence`                        | Search/filter private reference metadata with `q`, `kind`, `status`.            |
+| `POST /api/evidence/links`                 | Save `{title,url,note}` as an immutable draft bookmark.                         |
+| `POST /api/evidence/media`                 | Local emulator only: bounded multipart `{title,note,file}`.                     |
+| `POST /api/evidence/:id/approve`           | Approve an inspected reference (owner/admin, two-person teams).                 |
+| `POST /api/evidence/:id/archive`           | Retain historical attachments; exclude future attachment.                       |
+| `POST /api/evidence/:id/attach`            | Attach an approved reference with `{reviewId,note}`.                            |
+| `GET /api/evidence/:id/download`           | Local emulator only: authenticated, non-cacheable file attachment.              |
+| `GET /api/workspaces`                      | List memberships and roles.                                                     |
+| `POST /api/workspaces`                     | Create a team workspace with `{name}`.                                          |
+| `GET /api/workspaces/:id/overview`         | Active policies, drafts, pending decisions and members.                         |
+| `GET /api/workspaces/:id/members`          | List members (owner/admin).                                                     |
+| `POST /api/workspaces/:id/members`         | Add `{email, role}` from registered accounts.                                   |
+| `POST /api/workspaces/:id/members/:userId` | Change `{role}` or remove with `{remove:true}`.                                 |
+| `GET /api/workspaces/:id/audit`            | Paginated administrative audit events.                                          |
+| `POST /api/documents`                      | Save `{title,version,content,sourceUrl?,validFrom?,validUntil?}` as draft.      |
+| `GET /api/documents`                       | Metadata list; filters `q`, `status`.                                           |
+| `GET /api/documents/:id`                   | Read the immutable text.                                                        |
+| `POST /api/documents/:id/approve`          | Approve a draft policy.                                                         |
+| `POST /api/documents/:id/archive`          | Exclude a version from future reviews.                                          |
+| `POST /api/reviews`                        | Review `{draft,documentIds}`.                                                   |
+| `GET /api/reviews`                         | Review queue; filters `q`, `decision`.                                          |
+| `GET /api/reviews/:id`                     | Read evidence, decision, revision and current policy eligibility.               |
+| `POST /api/reviews/:id/decision`           | Record `{decision:'approved'                                                    | 'rejected',note,expectedRevision}`. |
+| `GET /api/reviews/:id/export`              | Private evidence JSON download.                                                 |
 
 Use a unique `Idempotency-Key` (16–128 letters, digits, `_` or `-`) when creating a review. A completed identical request replays without another model call/quota charge; changed payloads conflict. A running duplicate returns `409 REVIEW_IN_PROGRESS`. Retry after a short wait using the same key. Records are retained for 24 hours after completion; retries after that window can create another review. The UI preserves the key after a transport failure until the draft or selected sources change.
 

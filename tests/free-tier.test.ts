@@ -171,7 +171,7 @@ test("health reports AI and local-media capabilities independently; local media 
       let health = await (
         await api.fetch(new Request(`${origin}/api/health`), f.env)
       ).json();
-      assert.equal(health.v, 7);
+      assert.equal(health.v, 8);
       assert.equal(health.billingMode, "free_only");
       assert.equal(health.aiAvailable, true);
       assert.equal(health.mediaAvailable, true);

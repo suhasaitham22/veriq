@@ -1,4 +1,5 @@
 /** Private references and policy-grounded chat. All user/model text uses textContent. */
+import { requestBlob } from "./request.js";
 export function workspaceTools(ctx) {
   const $ = (id) => document.getElementById(id),
     { api, el, msg, mutate, writer, admin, openReview } = ctx;
@@ -160,22 +161,20 @@ export function workspaceTools(ctx) {
     return n;
   }
   async function download(item) {
-    const res = await fetch(
-      `${window.VERIQ_API}/api/evidence/${item.id}/download`,
-      {
-        credentials: "include",
-        headers: { "X-Workspace-ID": ctx.workspace().id },
-      },
-    );
-    if (res.status === 401) {
-      location.href = "/login.html";
-      throw new Error("Sign in again.");
+    let blob;
+    try {
+      blob = await requestBlob(
+        `${window.VERIQ_API}/api/evidence/${item.id}/download`,
+        {
+          credentials: "include",
+          headers: { "X-Workspace-ID": ctx.workspace().id },
+        },
+      );
+    } catch (error) {
+      if (error.status === 401) location.href = "/login.html";
+      throw error;
     }
-    if (!res.ok) {
-      const data = await res.json();
-      throw new Error(data.error || "Download failed.");
-    }
-    const url = URL.createObjectURL(await res.blob()),
+    const url = URL.createObjectURL(blob),
       a = el("a");
     a.href = url;
     a.download = item.filename;
@@ -286,22 +285,7 @@ export function workspaceTools(ctx) {
         form.set("title", $("evidence-title").value);
         form.set("note", $("evidence-note").value);
         form.set("file", file);
-        const res = await fetch(`${window.VERIQ_API}/api/evidence/media`, {
-          method: "POST",
-          credentials: "include",
-          headers: { "X-Workspace-ID": ctx.workspace().id },
-          body: form,
-        });
-        if (res.status === 401) {
-          location.href = "/login.html";
-          throw new Error("Sign in again.");
-        }
-        if (!res.headers.get("content-type")?.includes("application/json"))
-          throw new Error(
-            "Media API unavailable. Deploy the matching API and Pages proxy.",
-          );
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || "Upload failed.");
+        await api("/api/evidence/media", form);
       }
       $("evidence-form").reset();
       toggleKind();
