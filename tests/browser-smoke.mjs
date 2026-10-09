@@ -122,7 +122,9 @@ try {
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto(`${origin}/`);
   assert.match(await page.title(), /support answers/i);
+  await page.screenshot({ path: "/tmp/veriq-landing.png", fullPage: true });
   await page.goto(`${origin}/login.html?mode=signup`);
+  await page.screenshot({ path: "/tmp/veriq-login.png", fullPage: true });
   await page.getByLabel("Email").fill("browser@example.test");
   await page.getByLabel("Password").fill("pilot-test-password");
   await page.getByRole("button", { name: "Create account" }).click();
@@ -158,6 +160,7 @@ try {
   assert.equal(await page.locator("#go").isEnabled(), true);
   await page.getByRole("button", { name: "Review draft", exact: true }).click();
   await page.locator("#results .ready_for_review").waitFor();
+  await page.screenshot({ path: "/tmp/veriq-review.png", fullPage: true });
   await page.unroute("**/api/reviews", dropReviewResponse);
   assert.equal(reviewRetryKeys.length, 2);
   assert.ok(reviewRetryKeys[0]);
@@ -578,6 +581,33 @@ try {
   await page.waitForFunction(
     () => document.getElementById("metric-active").textContent === "1",
   );
+  // Visible keyboard focus and accessible motion/contrast preferences survive polish.
+  await page.locator('#workspace-nav button[data-view="review"]').focus();
+  await page.keyboard.press("Tab");
+  assert.equal(
+    await page.evaluate(
+      () => getComputedStyle(document.activeElement).outlineStyle,
+    ),
+    "solid",
+  );
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  assert.equal(
+    await page
+      .locator("#view-review")
+      .evaluate((el) => getComputedStyle(el).animationName),
+    "none",
+  );
+  await page.emulateMedia({
+    reducedMotion: "no-preference",
+    forcedColors: "active",
+  });
+  assert.equal(
+    await page
+      .locator('#workspace-nav button[data-view="review"]')
+      .evaluate((el) => getComputedStyle(el).outlineWidth),
+    "2px",
+  );
+  await page.emulateMedia({ forcedColors: "none" });
   await page.screenshot({ path: "/tmp/veriq-desktop.png", fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
   assert.equal(

@@ -12,8 +12,8 @@
     "build:api": "node scripts/build.mjs",
     "db:migrate:local": "wrangler d1 migrations apply veriq-db --local --cwd apps/api",
     "test:browser": "node tests/browser-smoke.mjs",
-    "format:check": "prettier --check apps/api/src apps/web/_worker.js apps/web/index.html apps/web/app.js apps/web/request.js apps/web/login.html apps/web/workspace-tools.js apps/web/app.html apps/web/css/workspace.css apps/web/js/auth.js scripts/verify-deployment.mjs tests docs README.md package.json",
-    "format": "prettier --write apps/api/src apps/web/_worker.js apps/web/index.html apps/web/app.js apps/web/request.js apps/web/login.html apps/web/workspace-tools.js apps/web/app.html apps/web/css/workspace.css apps/web/js/auth.js scripts/verify-deployment.mjs tests docs README.md package.json",
+    "format:check": "prettier --check apps/api/src apps/web/_worker.js apps/web/index.html apps/web/app.js apps/web/request.js apps/web/login.html apps/web/workspace-tools.js apps/web/app.html apps/web/css/*.css apps/web/js/auth.js scripts/verify-deployment.mjs tests docs README.md package.json",
+    "format": "prettier --write apps/api/src apps/web/_worker.js apps/web/index.html apps/web/app.js apps/web/request.js apps/web/login.html apps/web/workspace-tools.js apps/web/app.html apps/web/css/*.css apps/web/js/auth.js scripts/verify-deployment.mjs tests docs README.md package.json",
     "verify:deployment": "node scripts/verify-deployment.mjs"
   },
   "version": "0.3.0",

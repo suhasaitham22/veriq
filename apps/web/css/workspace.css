@@ -1,12 +1,15 @@
 .workspace-app {
-  --accent: #2163da;
-  background: #f5f7fb;
-  color: #1b2b43;
+  --accent: #5145cd;
+  --ink: #20243d;
+  --dim: #596278;
+  --line: #dce0ee;
+  background: var(--bg);
+  color: var(--ink);
   font-size: 14px;
   line-height: 1.55;
 }
 .workspace-app h1 {
-  font-size: 32px;
+  font-size: clamp(30px, 3vw, 42px);
   letter-spacing: -0.04em;
 }
 .workspace-app h2 {
@@ -31,10 +34,13 @@
   color: inherit;
 }
 .workspace-app .card {
-  border-color: #e1e7ef;
-  border-radius: 12px;
-  padding: 24px;
-  box-shadow: 0 2px 4px #19314603;
+  border-color: #ffffff;
+  border-radius: 22px;
+  padding: 26px;
+  background: #fffffff0;
+  box-shadow:
+    0 8px 32px #30345c07,
+    inset 0 1px 0 #fff;
 }
 .workspace-app input,
 .workspace-app textarea {
@@ -42,15 +48,19 @@
 }
 .workspace-app .small {
   font-size: 12px;
-  color: #64748b;
+  color: #596278;
 }
 .sidebar {
   width: 240px;
   position: fixed;
-  inset: 0 auto 0 0;
-  background: #14243a;
-  color: #c0ccdd;
-  padding: 28px 20px;
+  inset: 16px auto 16px 16px;
+  background: #ffffffe0;
+  color: #505973;
+  padding: 26px 18px;
+  border: 1px solid #fff;
+  border-radius: 26px;
+  box-shadow: 0 16px 60px #3c356512;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   z-index: 10;
@@ -59,7 +69,7 @@
   font-size: 24px;
   font-weight: 750;
   text-decoration: none;
-  color: #fff;
+  color: #282443;
   letter-spacing: -0.05em;
   display: flex;
   align-items: center;
@@ -71,7 +81,9 @@
   place-items: center;
   width: 29px;
   height: 29px;
-  background: #397cff;
+  background: linear-gradient(145deg, #8575ef, #5145cd);
+  color: #fff;
+  box-shadow: 0 4px 12px #5145cd26;
   border-radius: 8px;
   font-size: 17px;
   font-weight: 750;
@@ -82,12 +94,12 @@
   font-size: 9px;
   letter-spacing: 0.13em;
   margin-left: 38px;
-  color: #869ebc;
+  color: #65677e;
   font-weight: 600;
 }
 .workspace-picker {
-  border-top: 1px solid #2a3b53;
-  border-bottom: 1px solid #2a3b53;
+  border-top: 1px solid #e1e3ed;
+  border-bottom: 1px solid #e1e3ed;
   padding: 18px 0;
   margin: 24px 0;
 }
@@ -95,14 +107,14 @@
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.1em;
-  color: #9cb1ce;
+  color: #626981;
   margin: 0 0 8px;
 }
 .workspace-picker select {
   width: 100%;
-  background: #20334e;
-  color: #fff;
-  border-color: #384d6b;
+  background: #ffffffbf;
+  color: #303650;
+  border-color: #cfd3e5;
   font-size: 12px;
 }
 .workspace-meta {
@@ -117,7 +129,7 @@
 .sidebar-footer button {
   background: transparent;
   border: 0;
-  color: #acc9ff;
+  color: #5145cd;
   padding: 0;
   font-size: 11px;
 }
@@ -130,21 +142,22 @@
   text-align: left;
   background: transparent;
   border: 0;
-  color: #b8c8dd;
+  color: #535b73;
   border-radius: 8px;
   display: flex;
   gap: 10px;
   font-weight: 500;
 }
 .sidebar nav button[aria-current="page"] {
-  background: #254166;
-  color: #fff;
+  background: linear-gradient(110deg, #ede9ff, #f0eeff);
+  color: #4334ae;
+  box-shadow: inset 0 0 0 1px #dcd6f6;
 }
 .sidebar nav button:hover {
-  background: #20344f;
+  background: #f0eefb;
 }
 .sidebar nav button span {
-  color: #87abe3;
+  color: currentColor;
   font-size: 17px;
   line-height: 1;
 }
@@ -155,15 +168,15 @@
   align-items: center;
   word-break: break-word;
   font-size: 10px;
-  border-top: 1px solid #2a3b53;
+  border-top: 1px solid #e1e3ed;
   padding-top: 20px;
 }
 .sidebar-footer button {
   margin: 5px 10px 0 0;
 }
 .avatar {
-  background: #34567e;
-  color: #fff;
+  background: #e8e4fc;
+  color: #5145cd;
   flex-shrink: 0;
   border-radius: 50%;
   width: 30px;
@@ -172,12 +185,12 @@
   place-items: center;
 }
 .app-main {
-  margin-left: 240px;
+  margin-left: 272px;
 }
 .app-topbar {
-  height: 65px;
-  border-bottom: 1px solid #e0e7f1;
-  background: #fff;
+  min-height: 76px;
+  border-bottom: 1px solid #ffffffb0;
+  background: #ffffffa8;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -185,14 +198,18 @@
   font-weight: 600;
 }
 .privacy-tag {
-  font-size: 10px;
-  color: #64748b;
+  font-size: 11px;
+  color: #536571;
+  background: #ffffffa0;
+  border: 1px solid #fff;
+  border-radius: 100px;
+  padding: 6px 10px;
   font-weight: 500;
 }
 .app-content {
   max-width: 1500px;
   margin: auto;
-  padding: 30px 36px 60px;
+  padding: 36px 36px 60px;
 }
 .page-heading {
   display: flex;
@@ -238,9 +255,9 @@
   margin-bottom: 8px;
 }
 .metrics div {
-  background: #fff;
-  border: 1px solid #e1e7ef;
-  border-radius: 10px;
+  background: #ffffffa8;
+  border: 1px solid #fff;
+  border-radius: 18px;
   padding: 17px 20px;
 }
 .metrics span {
@@ -291,22 +308,23 @@
   flex-wrap: wrap;
 }
 .workspace-app .btn {
-  font-size: 12px;
-  border-radius: 7px;
-  padding: 10px 16px;
+  font-size: 13px;
+  border-radius: 12px;
+  padding: 11px 17px;
 }
 .workspace-app .btn-ghost {
-  background: #edf3fd;
-  color: #2a5ba0;
+  background: #efedf9;
+  color: #493eac;
+  box-shadow: inset 0 0 0 1px #ded9f0;
 }
 .workspace-app .btn-sm {
-  font-size: 11px;
-  padding: 7px 11px;
+  font-size: 12px;
+  padding: 8px 12px;
 }
 .text-button {
   background: transparent;
   border: 0;
-  color: #2163da;
+  color: #5145cd;
   font-size: 12px;
   padding: 0;
   text-align: left;
@@ -465,8 +483,8 @@ fieldset {
   flex-wrap: wrap;
 }
 .workspace-app .badge {
-  font-size: 9px;
-  padding: 4px 7px;
+  font-size: 10px;
+  padding: 5px 9px;
   letter-spacing: 0.03em;
   white-space: nowrap;
 }
@@ -585,15 +603,17 @@ fieldset {
 }
 dialog {
   border: 1px solid #dce5f1;
-  border-radius: 14px;
-  padding: 26px;
+  border-radius: 24px;
+  padding: 28px;
+  background: #fafaff;
   color: #1b2b43;
   max-width: 460px;
   width: calc(100% - 32px);
   box-shadow: 0 20px 100px #12223933;
 }
 dialog::backdrop {
-  background: #13243c80;
+  background: #25233f66;
+  backdrop-filter: blur(6px);
 }
 .sr-only {
   position: absolute;
@@ -612,7 +632,7 @@ dialog::backdrop {
   display: none !important;
 }
 .workspace-app :focus-visible {
-  outline: 3px solid #7dacff;
+  outline: 3px solid #5145cd;
   outline-offset: 3px;
 }
 .workspace-app .danger-button {
@@ -639,7 +659,7 @@ dialog::backdrop {
     padding-right: 16px;
   }
   .app-main {
-    margin-left: 210px;
+    margin-left: 242px;
   }
   .app-content {
     padding: 25px 22px;
@@ -665,7 +685,10 @@ dialog::backdrop {
   .sidebar {
     position: static;
     width: auto;
-    padding: 15px 18px;
+    margin: 12px;
+    padding: 16px;
+    border-radius: 22px;
+    overflow: visible;
   }
   .brand-caption {
     display: none;
