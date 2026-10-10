@@ -26,8 +26,12 @@
             <label for="email">Email</label
             ><input id="email" type="email" autocomplete="email" required />
           </div>
+          <div class="field" id="recovery-code-field" hidden>
+            <label for="recovery-code">Recovery code</label
+            ><input id="recovery-code" autocomplete="one-time-code" />
+          </div>
           <div class="field">
-            <label for="password">Password</label
+            <label for="password" id="password-label">Password</label
             ><input
               id="password"
               type="password"
@@ -36,11 +40,38 @@
               required
             />
           </div>
+          <div class="field" id="mfa-code-field">
+            <label for="mfa-code">Authenticator code (if enabled)</label
+            ><input
+              id="mfa-code"
+              inputmode="numeric"
+              autocomplete="one-time-code"
+              pattern="[0-9]{6}"
+              maxlength="6"
+            />
+          </div>
           <div class="form-err" id="err"></div>
           <button class="btn" id="submit" style="width: 100%">Log in</button>
         </form>
+        <div
+          id="signup-result"
+          class="card"
+          hidden
+          role="status"
+          aria-live="polite"
+          tabindex="-1"
+        >
+          <h2>Save your recovery code</h2>
+          <p class="small">
+            This code is shown once. Store it in an approved password manager;
+            Veriq cannot email or retrieve it.
+          </p>
+          <code id="recovery-display"></code>
+          <button class="btn" id="continue" type="button">Continue</button>
+        </div>
         <p class="form-switch" id="switch">
           New to Veriq? <a href="/login.html?mode=signup">Create an account</a>
+          · <a href="/login.html?mode=recover">Recover access</a>
         </p>
       </div>
     </main>

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import api from "../apps/api/src/index.ts";
-import { fixture, mediaBucket } from "./helpers.ts";
+import { fixture, mediaBucket, admit } from "./helpers.ts";
 const policy = "Refund requests must be submitted within 30 days of purchase.";
 type F = Awaited<ReturnType<typeof fixture>>;
 async function req(
@@ -16,7 +16,7 @@ async function req(
     new Request(`http://localhost:8787${path}`, {
       method: body === undefined ? "GET" : "POST",
       headers: {
-        cookie: `veriq_session=${token}`,
+        cookie: `__Host-veriq_session=${token}`,
         ...(body === undefined ? {} : { "content-type": "application/json" }),
         ...(workspace ? { "x-workspace-id": workspace } : {}),
         ...(key ? { "idempotency-key": key } : {}),
@@ -37,15 +37,7 @@ async function setup(f: F, team = false) {
     workspace = (
       await json201(await req(f, "/api/workspaces", { name: "Support" }))
     ).id;
-    assert.equal(
-      (
-        await req(f, `/api/workspaces/${workspace}/members`, {
-          email: "bob@example.test",
-          role: "admin",
-        })
-      ).status,
-      200,
-    );
+    await admit(f.env, workspace!, f.aliceToken, f.bobToken);
   }
   const id = (
     await json201(
@@ -91,11 +83,11 @@ function aiAnswer(answer = policy) {
       checks++;
       return {
         response: JSON.stringify({
-          notApplicable: false,
-          evidence:
-            data.statement === policy
-              ? [{ passageId: "d0p0", stance: "supports", quote: policy }]
-              : [],
+          statements: data.statements.map((statement: { index: number; text: string }) => ({
+            index: statement.index,
+            notApplicable: false,
+            evidence: statement.text === policy ? [{ source: "d0", stance: "supports", quote: policy }] : [],
+          })),
         }),
       };
     },
@@ -121,7 +113,7 @@ async function upload(
     new Request("http://localhost:8787/api/evidence/media", {
       method: "POST",
       headers: {
-        cookie: `veriq_session=${token}`,
+        cookie: `__Host-veriq_session=${token}`,
         ...(workspace ? { "x-workspace-id": workspace } : {}),
       },
       body: form,
@@ -263,6 +255,7 @@ test("approved attachments survive archival, appear in private exports and canno
       (
         await req(f, `/api/reviews/${review.id}/decision`, {
           decision: "approved",
+          attestation: { policyApplicabilityConfirmed: true, accountFactsChecked: true, evidenceInspected: true },
           note: "Human approved",
           expectedRevision: 0,
         })
@@ -460,6 +453,7 @@ test("invented chat facts remain unsupported and cannot be approved", async () =
       (
         await req(f, `/api/reviews/${saved.id}/decision`, {
           decision: "approved",
+          attestation: { policyApplicabilityConfirmed: true, accountFactsChecked: true, evidenceInspected: true },
           note: "Approved now",
           expectedRevision: 0,
         })

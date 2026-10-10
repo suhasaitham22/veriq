@@ -17,7 +17,6 @@ let scenarios = [],
 let user,
   workspace,
   workspaces = [],
-  selected = new Set(),
   busy = false,
   aiAvailable = false,
   epoch = 0,
@@ -27,9 +26,11 @@ let user,
   openSequence = 0,
   usageSequence = 0,
   retry = null;
+let credentialHandoff = false;
 const pages = new Map();
 const writer = () => ["owner", "admin", "reviewer"].includes(workspace?.role);
 const admin = () => ["owner", "admin"].includes(workspace?.role);
+const owner = () => workspace?.role === "owner";
 const tools = workspaceTools({
   api,
   el,
@@ -80,7 +81,8 @@ async function api(path, body, key) {
         : { method: "POST", body: multipart ? body : JSON.stringify(body) }),
     });
   } catch (error) {
-    if (error.status === 401) location.href = "/login.html";
+    if (error.status === 401 && error.code === "AUTH_REQUIRED" && !credentialHandoff)
+      location.href = "/login.html";
     throw error;
   } finally {
     if (body !== undefined && ["/api/reviews", "/api/chat"].includes(path))
@@ -95,9 +97,13 @@ async function refreshUsage() {
     const data = await api("/api/usage");
     if (version !== epoch || seq !== usageSequence) return;
     const resets = new Date(data.resetAt).toLocaleString();
+    const shared = data.sharedAi;
+    const sharedText = shared
+      ? ` Shared AI capacity remaining: ${shared.remaining.calls} calls, ${shared.remaining.inputBytes.toLocaleString()} input bytes and ${shared.remaining.outputTokens.toLocaleString()} output tokens; resets ${new Date(shared.resetsAt).toLocaleString()}. Provider usage is not measured and can stop earlier.`
+      : "";
     msg(
       "usage-status",
-      `Your daily app allowance: ${data.reviews.remaining} of ${data.reviews.limit} reviews and ${data.chat.remaining} of ${data.chat.limit} chat generations remaining. Shared across your workspaces. Resets ${resets} (midnight UTC).`,
+      `Your per-account allowance: ${data.reviews.remaining} of ${data.reviews.limit} reviews and ${data.chat.remaining} of ${data.chat.limit} chat generations remaining. This allowance does not guarantee provider capacity. Resets ${resets} (midnight UTC).${sharedText}`,
     );
   } catch (error) {
     if (version === epoch && seq === usageSequence)
@@ -130,13 +136,17 @@ function controls() {
     .querySelectorAll("[data-write]")
     .forEach((n) => (n.disabled = busy || !writer()));
   document
-    .querySelectorAll("[data-selection]")
-    .forEach((n) => (n.disabled = busy || !writer()));
-  document
     .querySelectorAll(
-      '#workspace-nav [data-view="team"],#workspace-nav [data-view="audit"],#workspace-nav [data-view="feedback"]',
+      '#workspace-nav [data-view="team"],#workspace-nav [data-view="settings"],#workspace-nav [data-view="audit"],#workspace-nav [data-view="feedback"]',
     )
     .forEach((n) => (n.hidden = !admin()));
+  const settingsButton = document.querySelector(
+    '#workspace-nav [data-view="settings"]',
+  );
+  if (settingsButton)
+    settingsButton.hidden = !owner() && !(workspace?.is_personal || user?.mfaVerified === false);
+  for (const id of ["retention-form", "workspace-export-form", "purge-form"])
+    $(id).querySelectorAll("input,button").forEach((n) => (n.disabled = busy || !owner()));
 }
 async function mutate(status, action) {
   if (busy) return;
@@ -175,6 +185,10 @@ const views = {
     "Document library",
     "Manage approved policy versions and their effective dates.",
   ],
+  settings: [
+    "Workspace settings",
+    "Manage bounded retention and owner-only data controls.",
+  ],
   team: [
     "Team & access",
     "Control who can view, review and approve in this workspace.",
@@ -190,6 +204,12 @@ const views = {
 };
 function view(name, refresh = true) {
   if (["team", "audit", "feedback"].includes(name) && !admin()) name = "review";
+  if (
+    name === "settings" &&
+    !owner() &&
+    !(workspace?.is_personal || user?.mfaVerified === false)
+  )
+    name = "review";
   for (const key of Object.keys(views)) $(`view-${key}`).hidden = key !== name;
   document
     .querySelectorAll("#workspace-nav button")
@@ -214,6 +234,52 @@ function view(name, refresh = true) {
     loadFeedback().catch((e) => msg("global-status", e.message, true));
   if (name === "audit")
     loadAudit().catch((e) => msg("global-status", e.message, true));
+  if (name === "settings" && owner())
+    loadLifecycle().catch((e) => msg("settings-status", e.message, true));
+}
+async function loadLifecycle() {
+  const data = await api(`/api/workspaces/${workspace.id}/lifecycle`);
+  $("retention-days").value = data.retentionDays;
+  $("lifecycle-status").textContent = data.retentionEnabled
+    ? `Automatic cleanup is enabled for ${data.retentionDays} days.`
+    : "Existing history is preserved. Save a retention period to enable automatic cleanup.";
+}
+async function downloadWorkspaceExport(password) {
+  const sections = {};
+  let section = "documents";
+  let cursor = null;
+  while (section) {
+    const page = await api(`/api/workspaces/${workspace.id}/export`, {
+      password,
+      section,
+      ...(cursor ? { cursor } : {}),
+    });
+    sections[page.section] = [
+      ...(sections[page.section] || []),
+      ...page.records,
+    ];
+    cursor = page.nextCursor;
+    if (!cursor) {
+      section = page.nextSection;
+      cursor = null;
+    }
+  }
+  const blob = new Blob(
+    [
+      JSON.stringify(
+        { format: "veriq-workspace-export-v1", workspace, sections },
+        null,
+        2,
+      ),
+    ],
+    { type: "application/json" },
+  );
+  const url = URL.createObjectURL(blob);
+  const link = el("a");
+  link.href = url;
+  link.download = `veriq-workspace-${workspace.id}.json`;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 $("workspace-nav").addEventListener("click", (e) => {
   const n = e.target.closest("[data-view]");
@@ -232,7 +298,6 @@ function counts() {
     `${$("input").value.length.toLocaleString()} / 3,000 characters · up to 12 sentences`;
   $("document-count").textContent =
     `${$("doc-content").value.length.toLocaleString()} / 20,000 characters`;
-  $("selected-count").textContent = `${selected.size} selected`;
 }
 $("input").oninput = () => {
   counts();
@@ -276,12 +341,21 @@ async function switchWorkspace(id) {
   sampleDocumentIds = [];
   $("demo-status").textContent = "";
   workspace = workspaces.find((w) => w.id === id) || workspaces[0];
-  selected.clear();
   pages.clear();
-  invalidate("Select current policies and paste a customer reply.");
+  invalidate("Full active policy set loaded. Paste a customer reply.");
   $("input").value = "";
   $("document-form").reset();
   $("member-form").reset();
+  $("accept-invitation-form").reset();
+  $("security-form").reset();
+  $("invitation-token").hidden = true;
+  $("invitation-token").textContent = "";
+  $("mfa-secret").hidden = true;
+  $("mfa-secret").textContent = "";
+  $("mfa-confirm-form").reset();
+  $("mfa-confirm-form").hidden = true;
+  $("security-recovery-display").textContent = "";
+  $("security-recovery-result").hidden = true;
   for (const id of [
     "source-search",
     "document-search",
@@ -327,6 +401,17 @@ async function switchWorkspace(id) {
   view("review", false);
   counts();
   controls();
+  const needsMfa = !workspace.is_personal && user?.mfaVerified !== true;
+  if (needsMfa) {
+    msg(
+      "global-status",
+      "Team content is paused until you sign in with an authenticator code. Open Workspace settings to enroll or log in again.",
+      true,
+    );
+    view("settings", false);
+    await refreshUsage();
+    return;
+  }
   await Promise.all([
     loadSources(),
     loadDocuments(),
@@ -381,35 +466,14 @@ function loadSources(append = false) {
   );
 }
 function sourceCard(doc) {
-  const item = el("div", undefined, "source-item"),
-    label = el("label"),
-    check = el("input");
-  check.type = "checkbox";
-  check.checked = selected.has(doc.id);
-  check.dataset.selection = "";
-  check.setAttribute("aria-label", `Use ${doc.title}, version ${doc.version}`);
-  if (!doc.eligible) {
-    check.disabled = true;
-    delete check.dataset.selection;
-    selected.delete(doc.id);
-  }
-  check.onchange = () => {
-    if (check.checked && selected.size >= 10) {
-      check.checked = false;
-      msg("status", "Select at most 10 policy versions.", true);
-      return;
-    }
-    if (check.checked) selected.add(doc.id);
-    else selected.delete(doc.id);
-    invalidate();
-    counts();
-  };
-  label.append(check, el("span", `${doc.title} · ${doc.version}`));
+  const item = el("div", undefined, "source-item");
   item.append(
-    label,
+    el("strong", `${doc.title} · ${doc.version}`),
     el(
       "p",
-      doc.eligible ? "Approved · active" : "Approved · outside validity dates",
+      doc.eligible
+        ? "Approved · active and included"
+        : "Approved · outside validity dates",
       "small",
     ),
   );
@@ -499,7 +563,6 @@ function documentCard(doc) {
           )
             return;
           await api(`/api/documents/${doc.id}/archive`, {});
-          selected.delete(doc.id);
           invalidate("Policy archived. Historical evidence is preserved.");
           msg(
             "doc-status",
@@ -705,6 +768,24 @@ function render(data) {
     const label = el("label", "Decision note");
     label.htmlFor = note.id;
     decision.append(label, note);
+    const attestation = el("fieldset");
+    attestation.id = "decision-attestation";
+    attestation.hidden = data.review.status !== "ready_for_review";
+    attestation.append(el("legend", "Approval checklist (all required)"));
+    for (const [key, text] of [
+      ["policyApplicabilityConfirmed", "I confirmed the active policy set applies."],
+      ["accountFactsChecked", "I checked any account-specific facts separately."],
+      ["evidenceInspected", "I inspected the evidence and contradictions."],
+    ]) {
+      const check = document.createElement("input");
+      check.type = "checkbox";
+      check.id = `attest-${key}`;
+      check.required = true;
+      const checkLabel = el("label", text);
+      checkLabel.htmlFor = check.id;
+      attestation.append(check, checkLabel);
+    }
+    decision.append(attestation);
     for (const value of ["approved", "rejected"]) {
       if (
         value === "approved" &&
@@ -715,10 +796,26 @@ function render(data) {
         button(
           value === "approved" ? "Approve draft" : "Reject draft",
           async () => {
+            if (value === "approved") {
+              const checks = [...attestation.querySelectorAll("input")];
+              if (!checks.every((check) => check.checked))
+                throw new Error("Complete every approval checklist item first.");
+            }
             await api(`/api/reviews/${data.id}/decision`, {
               decision: value,
               note: note.value,
               expectedRevision: data.revision,
+              ...(value === "approved"
+                ? {
+                    attestation: {
+                      policyApplicabilityConfirmed: $(
+                        "attest-policyApplicabilityConfirmed",
+                      ).checked,
+                      accountFactsChecked: $("attest-accountFactsChecked").checked,
+                      evidenceInspected: $("attest-evidenceInspected").checked,
+                    },
+                  }
+                : {}),
             });
             await openReview(data.id);
             await Promise.all([loadHistory(), overview()]);
@@ -754,20 +851,17 @@ $("go").onclick = () =>
     openSequence++;
     if (!$("input").value.trim())
       throw new Error("Paste a customer reply first.");
-    if (!selected.size)
-      throw new Error("Select current approved documents first.");
     const payload = {
-        draft: $("input").value,
-        documentIds: [...selected].sort(),
-      },
-      fingerprint = JSON.stringify(payload);
+      draft: $("input").value,
+    };
+    const fingerprint = JSON.stringify(payload);
     if (retry?.fingerprint !== fingerprint)
       retry = { fingerprint, key: crypto.randomUUID() };
     $("results").replaceChildren();
     current = null;
     msg(
       "status",
-      "Reviewing each sentence against the full selected policies…",
+      "Reviewing each sentence against the full active approved policy set…",
     );
     const data = await api("/api/reviews", payload, retry.key);
     await openReview(data.id);
@@ -781,9 +875,12 @@ async function loadMembers() {
   const data = await api(`/api/workspaces/${workspace.id}/members`);
   if (version !== epoch || sequence !== memberSequence) return;
   $("members").replaceChildren();
+  const invitations = await api(`/api/workspaces/${workspace.id}/invitations`);
+  if (version !== epoch || sequence !== memberSequence) return;
   for (const m of data.members) {
     const row = el("div", undefined, "member-row");
-    row.append(el("strong", m.email), el("span", m.role, "badge"));
+    const label = m.email || m.recipientLabel || "Workspace member";
+    row.append(el("strong", label), el("span", m.role, "badge"));
     if (
       !workspace.is_personal &&
       m.user_id !== user.id &&
@@ -791,7 +888,7 @@ async function loadMembers() {
       (workspace.role === "owner" || m.role !== "admin")
     ) {
       const select = el("select");
-      select.setAttribute("aria-label", `Role for ${m.email}`);
+      select.setAttribute("aria-label", `Role for ${label}`);
       for (const role of workspace.role === "owner"
         ? ["admin", "reviewer", "viewer"]
         : ["reviewer", "viewer"]) {
@@ -816,7 +913,7 @@ async function loadMembers() {
         button(
           "Remove",
           async () => {
-            if (!confirm(`Remove ${m.email} from this workspace?`)) return;
+            if (!confirm(`Remove ${label} from this workspace?`)) return;
             await api(`/api/workspaces/${workspace.id}/members/${m.user_id}`, {
               remove: true,
             });
@@ -828,19 +925,44 @@ async function loadMembers() {
     }
     $("members").append(row);
   }
+  for (const invite of invitations.invitations || []) {
+    const row = el("div", undefined, "member-row");
+    row.append(
+      el(
+        "span",
+        `Invitation for ${invite.recipientLabel} · ${invite.role} · expires ${new Date(invite.expiresAt).toLocaleDateString()}`,
+      ),
+      button(
+        "Revoke",
+        async () => {
+          await api(`/api/workspaces/${workspace.id}/invitations/${invite.id}/revoke`, {});
+          await loadMembers();
+        },
+        "admin",
+      ),
+    );
+    $("members").append(row);
+  }
   controls();
 }
 $("member-form").onsubmit = (e) => {
   e.preventDefault();
   mutate("team-status", async () => {
-    await api(`/api/workspaces/${workspace.id}/members`, {
-      email: $("member-email").value,
+    const recipientAccountId = $("member-account-id").value.trim();
+    if (recipientAccountId === user.id)
+      throw new Error("You cannot invite your own account.");
+    const data = await api(`/api/workspaces/${workspace.id}/invitations`, {
+      recipientAccountId,
+      recipientLabel: $("member-label").value.trim(),
       role: $("member-role").value,
     });
     $("member-form").reset();
+    $("invitation-token").hidden = false;
+    $("invitation-token").textContent =
+      `Deliver this one-time invitation token out of band: ${data.token}`;
     msg(
       "team-status",
-      "Member added. They can select this workspace after signing in.",
+      "Invitation created. It grants access only when the recipient accepts the token.",
     );
     await Promise.all([loadMembers(), overview()]);
   });
@@ -922,9 +1044,8 @@ $("setup-demo").onclick = () =>
   mutate("demo-status", async () => {
     const data = await api("/api/demo/setup", { confirmSamplePolicies: true });
     sampleDocumentIds = data.documentIds;
-    selected = new Set(data.documentIds);
     invalidate(
-      "Fictional sample policy selected. Choose a scenario, then run the review.",
+      "Fictional sample policy is active. Choose a scenario, then run the review.",
     );
     counts();
     await Promise.all([loadSources(), loadDocuments(), overview()]);
@@ -937,7 +1058,6 @@ $("load-scenario").onclick = () => {
   const scenario = scenarios.find((s) => s.id === $("demo-scenario").value);
   if (!scenario) return;
   $("input").value = scenario.draft;
-  selected = new Set(sampleDocumentIds);
   invalidate(`Sample scenario: ${scenario.expectation}`);
   counts();
   loadSources().catch((e) => msg("demo-status", e.message, true));
@@ -1033,7 +1153,7 @@ controls();
     const health = await api("/api/health");
     if (
       health.mode !== "support_review" ||
-      health.v < 8 ||
+      health.v < 9 ||
       health.billingMode !== "free_only" ||
       ![
         "pilot_feedback",
@@ -1041,6 +1161,12 @@ controls();
         "ai_chat",
         "free_tier_policy",
         "usage_status",
+        "invitation_admission",
+        "offline_recovery",
+        "workspace_lifecycle",
+        "full_policy_scope",
+        "shared_ai_capacity",
+        "totp_mfa",
       ].every((f) => health.features?.includes(f))
     )
       throw new Error(
@@ -1058,6 +1184,7 @@ controls();
     user = (await api("/api/auth/me")).user;
     $("who").textContent = user.email;
     $("avatar").textContent = user.email[0].toUpperCase();
+    $("account-id").textContent = user.id;
     await loadWorkspaces();
     const demo = await api("/api/demo");
     scenarios = demo.scenarios;
@@ -1074,3 +1201,151 @@ controls();
     msg("global-status", e.message, true);
   }
 })();
+for (const [id, fn] of [
+  [
+    "retention-form",
+    async () => {
+      await api(`/api/workspaces/${workspace.id}/retention`, {
+        password: $("retention-password").value,
+        workspaceName: workspace.name,
+        retentionDays: Number($("retention-days").value),
+      });
+      $("retention-password").value = "";
+      msg("settings-status", "Retention period saved.");
+    },
+  ],
+  [
+    "purge-form",
+    async () => {
+      const password = $("purge-password").value;
+      if (!confirm("Purge records covered by the saved retention period now?"))
+        return;
+      const result = await api(`/api/workspaces/${workspace.id}/purge`, {
+        password,
+        workspaceName: workspace.name,
+      });
+      $("purge-password").value = "";
+      msg("settings-status", `Purged ${JSON.stringify(result.removed)}.`);
+    },
+  ],
+]) {
+  $(id).onsubmit = (event) => {
+    event.preventDefault();
+    mutate("settings-status", fn);
+  };
+}
+$("workspace-export-form").onsubmit = (event) => {
+  event.preventDefault();
+  mutate("settings-status", async () => {
+    const password = $("export-password").value;
+    await downloadWorkspaceExport(password);
+    $("export-password").value = "";
+    msg("settings-status", "Workspace export downloaded.");
+  });
+};
+$("security-form").onsubmit = (event) => {
+  event.preventDefault();
+  mutate("security-status", async () => {
+    const result = await api("/api/auth/security", {
+      password: $("security-password").value,
+      ...( $("security-new-password").value
+        ? { newPassword: $("security-new-password").value }
+        : {}),
+      ...($("security-mfa-code").value.trim()
+        ? { code: $("security-mfa-code").value.trim() }
+        : {}),
+    });
+    if (!result.recoveryCode)
+      throw new Error("Security rotation did not return a replacement code.");
+    credentialHandoff = true;
+    $("security-password").value = "";
+    $("security-new-password").value = "";
+    $("security-mfa-code").value = "";
+    $("security-recovery-display").textContent = result.recoveryCode;
+    $("security-recovery-result").hidden = false;
+    $("security-form").hidden = true;
+    $("security-recovery-continue").onclick = () => {
+      location.href = "/login.html";
+    };
+  });
+};
+$("accept-invitation-form").onsubmit = (event) => {
+  event.preventDefault();
+  mutate("security-status", async () => {
+    const result = await api("/api/invitations/accept", {
+      token: $("invitation-token-input").value.trim(),
+    });
+    $("invitation-token-input").value = "";
+    await loadWorkspaces(result.workspaceId);
+    msg("global-status", "Invitation accepted; admitted workspace selected.");
+  });
+};
+$("workspace-delete-form").onsubmit = (event) => {
+  event.preventDefault();
+  mutate("security-status", async () => {
+    if (!confirm("Permanently delete this workspace and its content?")) return;
+    await api(`/api/workspaces/${workspace.id}/delete`, {
+      password: $("workspace-delete-password").value,
+      workspaceName: $("workspace-delete-name").value,
+      confirm: $("workspace-delete-confirm").value,
+    });
+    await loadWorkspaces();
+    view("review");
+    msg("security-status", "Workspace deleted.");
+  });
+};
+$("account-delete-form").onsubmit = (event) => {
+  event.preventDefault();
+  mutate("security-status", async () => {
+    if (!confirm("Pseudonymize this account and remove personal workspace access? Shared-team contributions retain a stable actor ID.")) return;
+    await api("/api/account/delete", {
+      password: $("account-delete-password").value,
+      confirm: $("account-delete-confirm").value,
+    });
+    location.href = "/login.html";
+  });
+};
+$("mfa-enroll-form").onsubmit = (event) => {
+  event.preventDefault();
+  mutate("security-status", async () => {
+    const result = await api("/api/auth/mfa/enroll", {
+      password: $("mfa-enroll-password").value,
+    });
+    $("mfa-enroll-password").value = "";
+    $("mfa-secret").hidden = false;
+    $("mfa-secret").textContent =
+      `Enter this secret manually in your authenticator: ${result.secret}`;
+    $("mfa-secret").focus();
+    $("mfa-confirm-form").hidden = false;
+  });
+};
+$("mfa-confirm-form").onsubmit = (event) => {
+  event.preventDefault();
+  mutate("security-status", async () => {
+    await api("/api/auth/mfa/confirm", {
+      password: $("mfa-confirm-password").value,
+      code: $("mfa-confirm-code").value,
+    });
+    $("mfa-secret").textContent = "";
+    $("mfa-secret").hidden = true;
+    $("mfa-confirm-form").reset();
+    $("mfa-confirm-form").hidden = true;
+    $("mfa-enroll-form").reset();
+    user = (await api("/api/auth/me")).user;
+    await loadWorkspaces(workspace?.id);
+    msg(
+      "security-status",
+      "MFA enabled and this session is verified. Team content is now available.",
+    );
+  });
+};
+$("mfa-disable-form").onsubmit = (event) => {
+  event.preventDefault();
+  mutate("security-status", async () => {
+    await api("/api/auth/mfa/disable", {
+      password: $("mfa-disable-password").value,
+      code: $("mfa-disable-code").value,
+    });
+    msg("security-status", "MFA disabled. All sessions were revoked; log in again.");
+  });
+};

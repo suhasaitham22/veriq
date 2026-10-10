@@ -42,6 +42,14 @@
     0 8px 32px #30345c07,
     inset 0 1px 0 #fff;
 }
+.workspace-app code {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.workspace-app .notice {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
 .workspace-app input,
 .workspace-app textarea {
   border-color: #cfdae8;
@@ -685,6 +693,8 @@ dialog::backdrop {
   .sidebar {
     position: static;
     width: auto;
+    min-width: 0;
+    max-width: calc(100vw - 24px);
     margin: 12px;
     padding: 16px;
     border-radius: 22px;
@@ -708,8 +718,11 @@ dialog::backdrop {
   }
   .sidebar nav {
     display: flex;
+    flex-wrap: wrap;
     gap: 4px;
-    overflow: auto;
+    overflow: visible;
+    min-width: 0;
+    max-width: 100%;
   }
   .sidebar nav button {
     padding: 9px 10px;

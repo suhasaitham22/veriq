@@ -1,0 +1,139 @@
+name: Owner-triggered release
+
+on:
+  workflow_dispatch:
+    inputs:
+      pages_project: { description: Existing Cloudflare Pages project name, required: true, type: string }
+      pages_origin: { description: Existing Pages HTTPS origin, required: true, type: string }
+      api_origin: { description: Existing API Worker HTTPS origin configured in Pages production API_ORIGIN, required: true, type: string }
+      free_plan_attested: { description: Existing account is verified Workers Free, required: true, type: boolean }
+      backup_confirmed: { description: Target D1 backup and restore location confirmed, required: true, type: boolean }
+      staging_verified: { description: Matching release/migrations verified in isolated free-plan staging and existing production integrations reconciled, required: true, type: boolean }
+      migration_plan_confirmed: { description: Migration state inspected; production migrations remain a separate owner command, required: true, type: boolean }
+      secrets_configured: { description: Required Worker/Pages settings and secrets configured out of band, required: true, type: boolean }
+
+permissions:
+  contents: read
+
+concurrency:
+  group: veriq-production-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      inputs.free_plan_attested == true &&
+      inputs.backup_confirmed == true &&
+      inputs.staging_verified == true &&
+      inputs.migration_plan_confirmed == true &&
+      inputs.secrets_configured == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/setup-node@v4
+        with: { node-version: '24', cache: npm }
+      - run: npm ci
+      - run: npm run format:check
+      - run: npm run check
+      - run: npm run build:api
+      - name: Normalize and validate release inputs
+        env:
+          PAGES_ORIGIN_INPUT: ${{ inputs.pages_origin }}
+          API_ORIGIN_INPUT: ${{ inputs.api_origin }}
+          PAGES_PROJECT: ${{ inputs.pages_project }}
+        run: |
+          PAGES_ORIGIN_INPUT="$PAGES_ORIGIN_INPUT" API_ORIGIN_INPUT="$API_ORIGIN_INPUT" PAGES_PROJECT="$PAGES_PROJECT" node --input-type=module <<'NODE'
+          import { appendFileSync } from 'node:fs';
+          import { canonicalOrigin, validateProject } from './scripts/release-preflight.mjs';
+          const pages = canonicalOrigin(process.env.PAGES_ORIGIN_INPUT, 'pages_origin');
+          const api = canonicalOrigin(process.env.API_ORIGIN_INPUT, 'api_origin');
+          if (pages === api) throw new Error('Pages and API origins must be distinct.');
+          validateProject(process.env.PAGES_PROJECT);
+          appendFileSync(process.env.GITHUB_ENV, `PAGES_ORIGIN=${pages}\nAPI_ORIGIN=${api}\n`);
+          NODE
+      - name: Require deployment credentials without printing them
+        env:
+          CF_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          test -n "$CF_API_TOKEN" || { echo 'Missing CLOUDFLARE_API_TOKEN environment secret.'; exit 1; }
+          test -n "$CF_ACCOUNT_ID" || { echo 'Missing CLOUDFLARE_ACCOUNT_ID environment secret.'; exit 1; }
+      - name: Confirm required Worker secret metadata
+        env:
+          CF_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          CF_API_TOKEN="$CF_API_TOKEN" CF_ACCOUNT_ID="$CF_ACCOUNT_ID" node --input-type=module <<'NODE'
+          import { hasSecretMetadata } from './scripts/release-preflight.mjs';
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), 15000);
+          try {
+            const response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(process.env.CF_ACCOUNT_ID)}/workers/scripts/veriq-api/secrets`, {
+              headers: { Authorization: `Bearer ${process.env.CF_API_TOKEN}` }, signal: controller.signal,
+            });
+            if (!response.ok) throw new Error(`Worker secret metadata request failed (${response.status}).`);
+            const metadata = await response.json();
+            if (!hasSecretMetadata(metadata, 'MFA_ENCRYPTION_KEY'))
+              throw new Error('MFA_ENCRYPTION_KEY is absent; configure it out of band before release.');
+          } catch (error) { throw new Error(error.name === 'AbortError' ? 'Worker secret metadata request timed out.' : error.message); } finally { clearTimeout(timer); }
+          NODE
+      - name: Confirm all migrations are applied (read-only)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          npx wrangler d1 execute veriq-db --remote --json --cwd apps/api --command 'SELECT name FROM d1_migrations ORDER BY id' > /tmp/veriq-d1-migrations.json
+          node --input-type=module <<'NODE'
+          import { readdir, readFile } from 'node:fs/promises';
+          import { unappliedMigrations } from './scripts/release-preflight.mjs';
+          const local = (await readdir('apps/api/migrations')).filter((name) => name.endsWith('.sql'));
+          const parsed = JSON.parse(await readFile('/tmp/veriq-d1-migrations.json', 'utf8'));
+          const names = [];
+          const visit = (value) => {
+            if (!value || typeof value !== 'object') return;
+            if (Array.isArray(value)) return value.forEach(visit);
+            if (typeof value.name === 'string') names.push(value.name);
+            Object.values(value).forEach(visit);
+          };
+          visit(parsed);
+          const missing = unappliedMigrations(local, names);
+          if (missing.length) throw new Error(`Unapplied production migrations: ${missing.join(', ')}`);
+          if (!local.length) throw new Error('No local migrations found; refusing release.');
+          NODE
+      - name: Verify Pages production metadata and API_ORIGIN
+        env:
+          CF_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          PAGES_PROJECT: ${{ inputs.pages_project }}
+        run: |
+          CF_API_TOKEN="$CF_API_TOKEN" CF_ACCOUNT_ID="$CF_ACCOUNT_ID" PAGES_PROJECT="$PAGES_PROJECT" API_ORIGIN="$API_ORIGIN" PAGES_ORIGIN="$PAGES_ORIGIN" node --input-type=module <<'NODE'
+          import { validatePagesMetadata } from './scripts/release-preflight.mjs';
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), 15000);
+          try {
+            const response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(process.env.CF_ACCOUNT_ID)}/pages/projects/${encodeURIComponent(process.env.PAGES_PROJECT)}`, {
+              headers: { Authorization: `Bearer ${process.env.CF_API_TOKEN}` }, signal: controller.signal,
+            });
+            if (!response.ok) throw new Error(`Cloudflare metadata request failed (${response.status}).`);
+            validatePagesMetadata(await response.json(), process.env.PAGES_ORIGIN, process.env.API_ORIGIN);
+          } catch (error) { throw new Error(error.name === 'AbortError' ? 'Cloudflare metadata request timed out.' : error.message); } finally { clearTimeout(timer); }
+          NODE
+      - name: Deploy matching API with free-only attestation
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx wrangler deploy --cwd apps/api --var "WEB_ORIGIN:$PAGES_ORIGIN" --var 'WORKERS_FREE_PLAN_CONFIRMED:true'
+      - name: Deploy Pages assets to verified production branch
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          PAGES_PROJECT: ${{ inputs.pages_project }}
+          RELEASE_SHA: ${{ github.sha }}
+        run: npx wrangler pages deploy apps/web --project-name "$PAGES_PROJECT" --branch main --commit-hash "$RELEASE_SHA"
+      - name: Verify deployed release and proxy
+        run: npm run verify:deployment -- "$PAGES_ORIGIN"

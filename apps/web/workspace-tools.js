@@ -3,8 +3,7 @@ import { requestBlob } from "./request.js";
 export function workspaceTools(ctx) {
   const $ = (id) => document.getElementById(id),
     { api, el, msg, mutate, writer, admin, openReview } = ctx;
-  let selected = new Set(),
-    parent = null,
+  let parent = null,
     retry = null,
     mediaAvailable = false,
     reviewId = null;
@@ -16,12 +15,8 @@ export function workspaceTools(ctx) {
     $("evidence-kind").querySelector('[value="media"]').disabled =
       !mediaAvailable;
     $("chat-new").disabled = busy;
-    document
-      .querySelectorAll("[data-chat-source]")
-      .forEach((n) => (n.disabled = busy || !writer()));
   }
   function reset() {
-    selected.clear();
     parent = null;
     retry = null;
     reviewId = null;
@@ -196,30 +191,14 @@ export function workspaceTools(ctx) {
       "/api/documents?status=approved",
       "documents",
       (doc) => {
-        const n = el("label", undefined, "source-item"),
-          check = el("input");
-        check.type = "checkbox";
-        check.checked = selected.has(doc.id);
-        if (doc.eligible) {
-          check.dataset.chatSource = "";
-          check.onchange = () => {
-            if (check.checked) selected.add(doc.id);
-            else selected.delete(doc.id);
-            retry = null;
-          };
-        } else {
-          check.disabled = true;
-          selected.delete(doc.id);
-        }
-        check.setAttribute(
-          "aria-label",
-          `Chat policy ${doc.title}, version ${doc.version}`,
-        );
+        const n = el("div", undefined, "source-item");
         n.append(
-          check,
+          el("strong", `${doc.title} · ${doc.version}`),
           el(
-            "span",
-            `${doc.title} · ${doc.version}${doc.eligible ? "" : " · not active"}`,
+            "small",
+            doc.eligible
+              ? "Approved · active and included"
+              : "Approved · outside validity dates",
           ),
         );
         return n;
@@ -229,8 +208,8 @@ export function workspaceTools(ctx) {
   }
   function updateParent() {
     $("chat-context").textContent = parent
-      ? "Follow-up in this conversation. Current selected policies are the evidence for the next answer."
-      : "New conversation. Select approved policies, then ask a support question.";
+      ? "Follow-up in this conversation. The active approved policy set remains the evidence scope."
+      : "New conversation. Every active approved policy in this workspace is included automatically.";
   }
   function renderTurn(turn) {
     const n = el("article", undefined, "chat-turn");
@@ -302,17 +281,28 @@ export function workspaceTools(ctx) {
   $("chat-form").onsubmit = (e) => {
     e.preventDefault();
     mutate("chat-status", async () => {
-      if (!selected.size || selected.size > 10)
-        throw new Error("Select 1–10 approved policies for chat.");
       const body = {
         question: $("chat-question").value,
-        documentIds: [...selected].sort(),
         parentId: parent,
       };
       if (!retry || JSON.stringify(retry.body) !== JSON.stringify(body))
         retry = { body, key: crypto.randomUUID() };
       msg("chat-status", "Generating a draft and checking every claim…");
-      const data = await api("/api/chat", retry.body, retry.key);
+      let data;
+      try {
+        data = await api("/api/chat", retry.body, retry.key);
+      } catch (error) {
+        if (error.status === 409 && error.code === "CHAT_POLICY_STALE") {
+          retry = null;
+          msg(
+            "chat-status",
+            "The active policy set changed. Start this question again so the new set is checked.",
+            true,
+          );
+          return;
+        }
+        throw error;
+      }
       $("chat-output").replaceChildren(renderTurn(data.turn));
       parent = data.turn.id;
       retry = null;

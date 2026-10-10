@@ -16,6 +16,7 @@
       <div class="nav-inner">
         <a class="logo" href="/">Veriq</a>
         <div class="nav-links">
+          <a href="#trust">Trust &amp; limits</a>
           <a href="/login.html">Log in</a
           ><a class="btn btn-sm" href="/login.html?mode=signup"
             >Start reviewing</a
@@ -29,9 +30,10 @@
           <p class="eyebrow">Evidence before send</p>
           <h1>Support answers your documentation can back up.</h1>
           <p>
-            Review AI-generated replies against the policies and product
-            documents you approve. See supporting quotes, contradictions, and
-            missing evidence before a customer sees the answer.
+            Review AI-generated replies against the active, approved policy
+            set in your workspace. See supporting quotes, contradictions and
+            missing evidence before a customer sees the answer. A human still
+            decides what to send.
           </p>
           <a class="btn" href="/login.html?mode=signup"
             >Create your workspace</a
@@ -85,18 +87,80 @@
           </article>
         </div>
       </section>
+      <section class="section" id="trust">
+        <div class="steps">
+          <article class="card">
+            <p class="eyebrow">Trust boundary</p>
+            <h2>Evidence, not an accuracy guarantee</h2>
+            <p>
+              Veriq checks the active, approved policy set for the workspace;
+              it does not ask reviewers to silently choose a partial subset.
+              Exact quotes and source versions are provenance, not independent
+              semantic or account-action verification.
+            </p>
+          </article>
+          <article class="card">
+            <p class="eyebrow">Privacy by scope</p>
+            <h2>Know what is shared and processed</h2>
+            <p>
+              Workspace members can read shared policies, reviews and chat
+              history. Policy text, drafts and chat questions sent for AI
+              processing are sent to Cloudflare Workers AI. Veriq does not
+              access customer account records, fetch links, or send messages.
+              Use approved, redacted material for a supervised pilot.
+            </p>
+          </article>
+          <article class="card">
+            <p class="eyebrow">Data controls</p>
+            <h2>Export, retain, or delete deliberately</h2>
+            <p>
+              Owners can export workspace records in bounded pages, opt into
+              7–365 day review/chat/feedback retention, purge retained records,
+              or delete a workspace after password reauthentication. Existing
+              history is preserved until retention is enabled. These controls
+              are product behavior, not a legal retention or compliance
+              guarantee.
+            </p>
+          </article>
+          <article class="card">
+            <p class="eyebrow">Operating limits</p>
+            <h2>Designed for verified Free-plan operation</h2>
+            <p>
+              Workers AI is gated until the operator confirms the existing
+              Cloudflare Workers Free plan. Provider limits can pause AI; there
+              is no paid fallback. Hosted media storage is disabled. Human
+              review remains required before sending.
+            </p>
+          </article>
+          <article class="card">
+            <p class="eyebrow">Support and readiness</p>
+            <h2>Start narrow and measure</h2>
+            <p>
+              Report non-sensitive product issues through
+              <a href="https://github.com/suhasaitham22/veriq/issues">GitHub issues</a>.
+              Use the repository’s
+              <a href="https://github.com/suhasaitham22/veriq/security/advisories/new">private vulnerability report</a>
+              for security details; do not post customer data or secrets.
+              Wider or enterprise use remains conditional on verified identity,
+              operator recovery, data-lifecycle obligations and an independently
+              reviewed benchmark.
+            </p>
+          </article>
+        </div>
+      </section>
       <section class="section">
         <div class="card">
-          <h2>Supported by your documents. Reviewed by your team.</h2>
+          <h2>Supported by your active policy set. Reviewed by your team.</h2>
           <p>
-            Veriq checks whether your approved company policies support an
-            answer. It does not establish universal truth, access customer
-            account records, or send messages. Missing information stays
-            visible.
+            Veriq checks the active, approved company policy set assigned to
+            the workspace. It does not establish universal truth, access
+            customer account records, or send messages. Missing information
+            stays visible.
           </p>
           <p class="small">
             Team workspaces, approval roles, versioned policy text, a shared
-            review queue and audit history. Helpdesk integrations are planned.
+            review queue, audit history and owner lifecycle controls. Helpdesk
+            integrations are not implemented.
           </p>
         </div>
       </section>
@@ -104,6 +168,7 @@
     <footer>
       Veriq · Support draft review ·
       <a href="https://github.com/suhasaitham22/veriq">Source code</a>
+      · <a href="#trust">Trust, privacy &amp; limits</a>
     </footer>
   </body>
 </html>

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import { readFileSync } from "node:fs";
 import api from "../apps/api/src/index.ts";
-import { fixture, fakeAI } from "./helpers.ts";
+import { fixture, fakeAI, admit } from "./helpers.ts";
 const text = "Refund requests must be submitted within 30 days of purchase.";
 type Fixture = Awaited<ReturnType<typeof fixture>>;
 async function req(
@@ -18,7 +18,7 @@ async function req(
     new Request(`http://localhost:8787${path}`, {
       method: body === undefined ? "GET" : "POST",
       headers: {
-        cookie: `veriq_session=${token}`,
+        cookie: `__Host-veriq_session=${token}`,
         ...(body === undefined ? {} : { "content-type": "application/json" }),
         ...(workspace ? { "X-Workspace-ID": workspace } : {}),
         ...(key ? { "Idempotency-Key": key } : {}),
@@ -55,15 +55,7 @@ async function team(f: Fixture) {
   });
   assert.equal(r.status, 201);
   const id = (await r.json()).id as string;
-  assert.equal(
-    (
-      await req(f, `/api/workspaces/${id}/members`, f.aliceToken, {
-        email: "bob@example.test",
-        role: "admin",
-      })
-    ).status,
-    200,
-  );
+  await admit(f.env, id, f.aliceToken, f.bobToken);
   return id;
 }
 async function ready(f: Fixture, workspace?: string) {
@@ -82,7 +74,7 @@ async function ready(f: Fixture, workspace?: string) {
   );
   f.env.AI = fakeAI({
     notApplicable: false,
-    evidence: [{ passageId: "d0p0", stance: "supports", quote: text }],
+    evidence: [{ source: "d0", stance: "supports", quote: text }],
   });
   const r = await req(
     f,
@@ -139,8 +131,8 @@ test("viewer cannot mutate and reviewer cannot approve documents or manage membe
       ["/api/reviews", { draft: text, documentIds: [id] }],
       [`/api/documents/${id}/approve`, {}],
       [
-        `/api/workspaces/${ws}/members`,
-        { email: "alice@example.test", role: "admin" },
+        `/api/workspaces/${ws}/invitations`,
+        { recipientLabel: "Known teammate", role: "admin" },
       ],
     ] as const)
       assert.equal((await req(f, path, f.bobToken, body, ws)).status, 403);
@@ -186,8 +178,9 @@ test("owner is protected; admins cannot appoint or demote admins; removal revoke
     );
     assert.equal(
       (
-        await req(f, `/api/workspaces/${ws}/members`, f.bobToken, {
-          email: "any@example.test",
+        await req(f, `/api/workspaces/${ws}/invitations`, f.bobToken, {
+          recipientAccountId: crypto.randomUUID(),
+          recipientLabel: "Known teammate",
           role: "admin",
         })
       ).status,
@@ -260,7 +253,7 @@ test("expiry, scheduled dates and invalid calendar dates fail closed", async () 
           documentIds: [future],
         })
       ).status,
-      400,
+      409,
     );
     const listed = (
       await (await req(f, "/api/documents")).json()
@@ -280,6 +273,7 @@ test("human decisions require readiness, active policies and optimistic revision
       (
         await decide({
           decision: "approved",
+          attestation: { policyApplicabilityConfirmed: true, accountFactsChecked: true, evidenceInspected: true },
           note: "Verified the policy.",
           expectedRevision: 0,
         })
@@ -306,6 +300,7 @@ test("human decisions require readiness, active policies and optimistic revision
       (
         await decide({
           decision: "approved",
+          attestation: { policyApplicabilityConfirmed: true, accountFactsChecked: true, evidenceInspected: true },
           note: "Trying old policy.",
           expectedRevision: 1,
         })
@@ -349,6 +344,7 @@ test("missing evidence cannot receive an approved human decision", async () => {
       (
         await req(f, `/api/reviews/${data.id}/decision`, f.aliceToken, {
           decision: "approved",
+          attestation: { policyApplicabilityConfirmed: true, accountFactsChecked: true, evidenceInspected: true },
           note: "Ignoring missing evidence.",
           expectedRevision: 0,
         })
@@ -379,13 +375,11 @@ test("retry keys replay exactly once, conflict on changed payload and fence conc
       gate = new Promise<void>((r) => (unblock = r));
     let calls = 0;
     f.env.AI = {
-      async run() {
+      async run(model, input) {
         calls++;
         entered();
         await gate;
-        return {
-          response: JSON.stringify({ notApplicable: false, evidence: [] }),
-        };
+        return fakeAI().run(model, input);
       },
     };
     const body = { draft: text, documentIds: [id] },
@@ -433,15 +427,13 @@ test("permission removal during inference prevents persisting the review", async
       id = await doc(f, ws);
     await req(f, `/api/documents/${id}/approve`, f.bobToken, {}, ws);
     f.env.AI = {
-      async run() {
+      async run(model, input) {
         f.sqlite
           .prepare(
             "DELETE FROM workspace_members WHERE workspace_id=? AND user_id=?",
           )
           .run(ws, f.bob);
-        return {
-          response: JSON.stringify({ notApplicable: false, evidence: [] }),
-        };
+        return fakeAI().run(model, input);
       },
     };
     assert.equal(
@@ -638,7 +630,7 @@ test("new account passwords, duplicate signup and hashed session cookies are val
     assert.match(cookie, /HttpOnly; Secure; SameSite=Lax/);
     assert.match(cookie, /Max-Age=43200/);
     assert.equal((await signup("long-pilot-password")).status, 409);
-    const token = cookie.match(/veriq_session=([^;]+)/)![1];
+    const token = cookie.match(/__Host-veriq_session=([^;]+)/)![1];
     assert.equal(
       f.sqlite
         .prepare(
@@ -692,7 +684,7 @@ test("a reclaimed lease fences the older worker from saving a second review", as
     let calls = 0,
       secondId = "";
     f.env.AI = {
-      async run() {
+      async run(model, input) {
         calls++;
         if (calls === 1) {
           f.sqlite
@@ -709,9 +701,7 @@ test("a reclaimed lease fences the older worker from saving a second review", as
           assert.equal(second.status, 201);
           secondId = (await second.json()).id;
         }
-        return {
-          response: JSON.stringify({ notApplicable: false, evidence: [] }),
-        };
+        return fakeAI().run(model, input);
       },
     };
     assert.equal(
