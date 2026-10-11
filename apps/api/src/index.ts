@@ -11,18 +11,25 @@ import { pilotRoutes } from "./pilot.ts";
 import { evidenceRoutes } from "./evidence.ts";
 import { chatRoutes } from "./chat.ts";
 import { usageStatus } from "./usage.ts";
+import { lifecycleRoutes, scheduledCleanup } from "./lifecycle.ts";
+import { budgetedAI, aiCapacityStatus, mutationCapacity } from "./capacity.ts";
+import { mfaAvailable, requireMfa } from "./mfa.ts";
 export interface Env {
   MEDIA?: R2Bucket;
   AI: AIClient;
   DB: D1Database;
-  CACHE?: KVNamespace;
   WEB_ORIGIN?: string;
+  /** Operator-provisioned 32-byte Base64 AES-GCM key; never a config-file value. */
+  MFA_ENCRYPTION_KEY?: string;
   /** Operator attestation after checking the current Cloudflare Workers Free plan. */
   WORKERS_FREE_PLAN_CONFIRMED?: string;
   /** Local emulator only; production R2 has no hard zero-cost cap. */
   LOCAL_MEDIA_DEMO?: string;
 }
 export default {
+  async scheduled(_controller: ScheduledController, env: Env): Promise<void> {
+    await scheduledCleanup(env.DB);
+  },
   async fetch(req: Request, env: Env): Promise<Response> {
     const url = new URL(req.url),
       origin = req.headers.get("origin"),
@@ -67,7 +74,7 @@ export default {
           {
             ok: true,
             service: "veriq-api",
-            v: 8,
+            v: 9,
             mode: "support_review",
             features: [
               "workspaces",
@@ -77,9 +84,16 @@ export default {
               "ai_chat",
               "free_tier_policy",
               "usage_status",
+              "invitation_admission",
+              "offline_recovery",
+              "workspace_lifecycle",
+              "full_policy_scope",
+              "shared_ai_capacity",
+              "totp_mfa",
             ],
             billingMode: "free_only",
             aiAvailable,
+            mfaAvailable: mfaAvailable(env.MFA_ENCRYPTION_KEY),
             mediaAvailable: !!media,
           },
           200,
@@ -99,8 +113,8 @@ export default {
           410,
           headers,
         );
-      const user = await getSessionUser(req, env.DB);
-      const auth = await authRoutes(req, url, env.DB, user);
+      const user = await getSessionUser(req, env.DB, env.MFA_ENCRYPTION_KEY);
+      const auth = await authRoutes(req, url, env.DB, user, env.MFA_ENCRYPTION_KEY);
       if (auth)
         return json(auth.data, auth.status ?? 200, {
           ...headers,
@@ -112,6 +126,15 @@ export default {
           "Your session has expired. Sign in again.",
           "AUTH_REQUIRED",
         );
+      if (req.method === "POST" && !url.pathname.endsWith("/export"))
+        await mutationCapacity(env.DB, user.id);
+      const lifecycle = await lifecycleRoutes(req, url, env.DB, user, media);
+      if (lifecycle instanceof Response) {
+        const h = new Headers(lifecycle.headers);
+        for (const [key, value] of Object.entries(headers)) h.set(key, value);
+        return new Response(lifecycle.body, { status: lifecycle.status, headers: h });
+      }
+      if (lifecycle) return json(lifecycle, 200, headers);
       const workspace = await workspaceRoutes(req, url, env.DB, user);
       if (workspace)
         return json(
@@ -132,8 +155,9 @@ export default {
         user,
         req.headers.get("x-workspace-id"),
       );
+      if (req.method === "POST" && !scope.workspace.is_personal) requireMfa(user);
       if (req.method === "GET" && url.pathname === "/api/usage")
-        return json(await usageStatus(scope), 200, headers);
+        return json({ ...(await usageStatus(scope)), sharedAi: await aiCapacityStatus(env.DB) }, 200, headers);
       if (
         req.method === "POST" &&
         ["/api/reviews", "/api/chat"].includes(url.pathname) &&
@@ -144,12 +168,13 @@ export default {
           "AI is paused until an administrator verifies the Cloudflare Workers Free plan. Saved documents, links and history remain available.",
           "FREE_PLAN_UNCONFIRMED",
         );
+      const ai = budgetedAI(env.DB, env.AI);
       const result =
         (await documentRoutes(req, url, scope)) ??
-        (await reviewRoutes(req, url, scope, env.AI)) ??
+        (await reviewRoutes(req, url, scope, ai)) ??
         (await pilotRoutes(req, url, scope)) ??
         (await evidenceRoutes(req, url, scope, media)) ??
-        (await chatRoutes(req, url, scope, env.AI));
+        (await chatRoutes(req, url, scope, ai));
       if (result instanceof Response) {
         const h = new Headers(result.headers);
         for (const [k, v] of Object.entries(headers)) h.set(k, v);
@@ -195,6 +220,8 @@ export default {
           400,
           headers,
         );
+      if (error instanceof Error && error.message.includes("VERIQ_CAPACITY"))
+        return json({ error: "Shared storage capacity reached. Export and apply retention or delete an unused workspace; no paid expansion is automatic.", code: "STORAGE_CAPACITY_EXHAUSTED", requestId }, 409, headers);
       // No drafts, documents, cookies, emails or exception messages go to application logs.
       console.error(
         JSON.stringify({

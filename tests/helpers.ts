@@ -3,6 +3,17 @@ import { readFileSync } from "node:fs";
 import { createSession } from "../apps/api/src/auth.ts";
 import type { Env } from "../apps/api/src/index.ts";
 import type { AIClient } from "../apps/api/src/pipeline.ts";
+import api from "../apps/api/src/index.ts";
+import { sealSeed, newSeed } from "../apps/api/src/mfa.ts";
+
+export interface Fixture {
+  env: Env;
+  sqlite: DatabaseSync;
+  alice: string;
+  bob: string;
+  aliceToken: string;
+  bobToken: string;
+}
 
 /** Execute production SQL against SQLite, not SQL-string-specific mock responses. */
 export function database() {
@@ -14,6 +25,7 @@ export function database() {
     "0003_workspaces.sql",
     "0004_pilot_feedback.sql",
     "0005_evidence_chat.sql",
+    "0006_customer_hardening.sql",
   ]) {
     sqlite.exec(
       readFileSync(
@@ -61,14 +73,16 @@ export function fakeAI(
   answer: unknown = { notApplicable: false, evidence: [] },
 ): AIClient {
   return {
-    async run() {
-      return { response: JSON.stringify(answer) };
+    async run(_model, input) {
+      if (!input || typeof input !== "object" || !("messages" in input) || !Array.isArray(input.messages))
+        throw new Error("Expected a review model request");
+      const { statements } = JSON.parse(input.messages[1].content);
+      return { response: JSON.stringify({ statements: statements.map((item: { index: number }) => ({ index: item.index, ...(answer as object) })) }) };
     },
   };
 }
-export async function fixture(ai = fakeAI()) {
+export async function fixture(ai = fakeAI()): Promise<Fixture> {
   const { sqlite, db } = database();
-  const map = new Map<string, string>();
   const env: Env = {
     DB: db,
     AI: ai,
@@ -76,14 +90,8 @@ export async function fixture(ai = fakeAI()) {
     // Controlled fixtures only: these do not assert any real account's billing plan.
     WORKERS_FREE_PLAN_CONFIRMED: "true",
     LOCAL_MEDIA_DEMO: "true",
-    CACHE: {
-      async get(key: string) {
-        return map.get(key) ?? null;
-      },
-      async put(key: string, value: string) {
-        map.set(key, value);
-      },
-    } as unknown as KVNamespace,
+    // Ephemeral fixture key; never an operator/production credential.
+    MFA_ENCRYPTION_KEY: btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32)))),
   };
   const alice = "11111111-1111-4111-8111-111111111111";
   const bob = "22222222-2222-4222-8222-222222222222";
@@ -93,13 +101,40 @@ export async function fixture(ai = fakeAI()) {
   ]) {
     sqlite
       .prepare(
-        "INSERT INTO users (id, email, password_hash, salt) VALUES (?, ?, 'hash', 'salt')",
+        "INSERT INTO users (id, email, password_hash, salt, mfa_seed) VALUES (?, ?, 'hash', 'salt', ?)",
       )
-      .run(id, email);
+      .run(id, email, await sealSeed(newSeed(), env.MFA_ENCRYPTION_KEY, id, "active"));
   }
-  const aliceToken = await createSession(db, alice);
-  const bobToken = await createSession(db, bob);
+  const aliceToken = await createSession(db, alice, null, true);
+  const bobToken = await createSession(db, bob, null, true);
   return { env, sqlite, alice, bob, aliceToken, bobToken };
+}
+
+/** Admit the fixture recipient through the real possession proof, never an email grant. */
+export async function admit(
+  env: Env,
+  workspaceId: string,
+  inviterToken: string,
+  inviteeToken: string,
+  role: "admin" | "reviewer" | "viewer" = "admin",
+) {
+  const account = await api.fetch(new Request("http://localhost:8787/api/auth/me", {
+    headers: { cookie: `__Host-veriq_session=${inviteeToken}` },
+  }), env);
+  const recipientAccountId = (await account.json()).user.id;
+  const invite = await api.fetch(new Request(`http://localhost:8787/api/workspaces/${workspaceId}/invitations`, {
+    method: "POST",
+    headers: { cookie: `__Host-veriq_session=${inviterToken}`, "content-type": "application/json" },
+    body: JSON.stringify({ recipientAccountId, recipientLabel: "Known fixture teammate", role }),
+  }), env);
+  if (invite.status !== 200) throw new Error(`Invitation failed: ${invite.status}`);
+  const { token } = await invite.json() as { token: string };
+  const accepted = await api.fetch(new Request("http://localhost:8787/api/invitations/accept", {
+    method: "POST",
+    headers: { cookie: `__Host-veriq_session=${inviteeToken}`, "content-type": "application/json" },
+    body: JSON.stringify({ token }),
+  }), env);
+  if (accepted.status !== 200) throw new Error(`Invitation acceptance failed: ${accepted.status}`);
 }
 
 /** Private object-store contract fixture; real bytes and metadata, no public URLs. */

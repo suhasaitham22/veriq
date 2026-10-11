@@ -19,13 +19,33 @@ export default {
         response.headers.set("cache-control", "no-store");
       return response;
     }
-    // This is deployment configuration, never an input supplied by the browser.
-    const origin = new URL(
-      env.API_ORIGIN || "https://veriq-api.suhasaitham22.workers.dev",
-    ).origin;
+    const configured = env.API_ORIGIN;
+    let origin;
+    try {
+      if (!configured) throw new Error("API_ORIGIN is required");
+      const candidate = new URL(configured);
+      const loopback =
+        candidate.protocol === "http:" &&
+        ["localhost", "127.0.0.1", "::1"].includes(candidate.hostname);
+      if (
+        (candidate.protocol !== "https:" && !loopback) ||
+        candidate.username ||
+        candidate.password ||
+        candidate.pathname !== "/" ||
+        candidate.search ||
+        candidate.hash
+      )
+        throw new Error("API_ORIGIN must be a canonical HTTPS origin");
+      origin = candidate.origin;
+    } catch {
+      return Response.json(
+        { error: "Review API is not configured for this deployment." },
+        { status: 503, headers: { "cache-control": "no-store" } },
+      );
+    }
     const target = `${origin}${url.pathname}${url.search}`;
     try {
-      return await fetch(new Request(target, request));
+      return await fetch(new Request(target, request), { redirect: "error" });
     } catch {
       return Response.json(
         { error: "Review API is unavailable. Please retry." },

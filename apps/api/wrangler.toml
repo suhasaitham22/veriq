@@ -1,6 +1,6 @@
 name = "veriq-api"
 main = "src/index.ts"
-compatibility_date = "2026-09-01"
+compatibility_date = "2026-10-09"
 
 [vars]
 API_BASE_URL = "https://veriq-api.workers.dev"
@@ -9,15 +9,15 @@ API_BASE_URL = "https://veriq-api.workers.dev"
 WORKERS_FREE_PLAN_CONFIRMED = "false"
 LOCAL_MEDIA_DEMO = "false"
 
+[triggers]
+crons = ["0 3 * * *"]
+
 # --- bindings (provisioned 2026-10-02) ---
 [[d1_databases]]
 binding = "DB"
 database_name = "veriq-db"
 database_id = "180710a2-bbc6-41cc-9203-7df4c3852cb0"
 
-[[kv_namespaces]]
-binding = "CACHE"
-id = "2be846dc543641cb93e12c4772c3f172"
 
 # Production R2 is excluded: its free allowance can bill overages.
 # Local emulator media setup only: docs/EVIDENCE_CHAT.md.

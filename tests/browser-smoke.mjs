@@ -1,5 +1,6 @@
-/** Browser → production API → SQLite → receipt rendering, with a controlled AI fixture. */
+/** Browser → production API → receipt rendering, with a controlled AI fixture. */
 import assert from "node:assert/strict";
+import { createHmac } from "node:crypto";
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { resolve, extname } from "node:path";
@@ -7,6 +8,31 @@ import { chromium } from "playwright";
 import api from "../apps/api/src/index.ts";
 import pages from "../apps/web/_worker.js";
 import { fixture, mediaBucket } from "./helpers.ts";
+function base32Decode(value) {
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+  let bits = "";
+  for (const char of value.replace(/=+$/, "").toUpperCase()) {
+    const index = alphabet.indexOf(char);
+    if (index < 0) throw new Error("Invalid test TOTP seed.");
+    bits += index.toString(2).padStart(5, "0");
+  }
+  const bytes = [];
+  for (let offset = 0; offset + 8 <= bits.length; offset += 8)
+    bytes.push(Number.parseInt(bits.slice(offset, offset + 8), 2));
+  return Buffer.from(bytes);
+}
+function totp(seed, step = Math.floor(Date.now() / 30000)) {
+  const digest = createHmac("sha1", base32Decode(seed))
+    .update(Buffer.from(BigInt(step).toString(16).padStart(16, "0"), "hex"))
+    .digest();
+  const offset = digest.at(-1) & 15;
+  const code =
+    ((digest[offset] & 0x7f) << 24) |
+    (digest[offset + 1] << 16) |
+    (digest[offset + 2] << 8) |
+    digest[offset + 3];
+  return String(code % 1_000_000).padStart(6, "0");
+}
 
 const f = await fixture({
   async run(_model, input) {
@@ -18,34 +44,37 @@ const f = await fixture({
             "Refund requests must be submitted within 30 days of purchase.",
         }),
       };
-    const { statement, passages } = data;
-    if (
-      !statement.includes("unlimited") &&
-      statement !==
-        "Refund requests must be submitted within 30 days of purchase."
-    ) {
-      return {
-        response: JSON.stringify({ notApplicable: false, evidence: [] }),
-      };
-    }
-    const quote = statement.includes("unlimited")
-      ? "Starter plans include 100 exports per month."
-      : "Refund requests must be submitted within 30 days of purchase.";
-    const passage = passages.find((p) => p.text.includes(quote));
+    const statements = data.statements || [];
+    const documents = data.documents || [];
     return {
       response: JSON.stringify({
-        notApplicable: false,
-        evidence: passage
-          ? [
-              {
-                passageId: passage.id,
-                stance: statement.includes("unlimited")
-                  ? "refutes"
-                  : "supports",
-                quote,
-              },
-            ]
-          : [],
+        statements: statements.map(({ index, text }) => {
+          if (
+            !text.includes("unlimited") &&
+            text !==
+              "Refund requests must be submitted within 30 days of purchase."
+          )
+            return { index, notApplicable: false, evidence: [] };
+          const quote = text.includes("unlimited")
+            ? "Starter plans include 100 exports per month."
+            : "Refund requests must be submitted within 30 days of purchase.";
+          const source = documents.find((document) =>
+            document.text.includes(quote),
+          );
+          return {
+            index,
+            notApplicable: false,
+            evidence: source
+              ? [
+                  {
+                    source: source.ref,
+                    stance: text.includes("unlimited") ? "refutes" : "supports",
+                    quote,
+                  },
+                ]
+              : [],
+          };
+        }),
       }),
     };
   },
@@ -128,10 +157,41 @@ try {
   await page.getByLabel("Email").fill("browser@example.test");
   await page.getByLabel("Password").fill("pilot-test-password");
   await page.getByRole("button", { name: "Create account" }).click();
+  await page.waitForTimeout(500);
+  const initialRecoveryCode = await page.locator("#recovery-display").textContent();
+  assert.ok(initialRecoveryCode.length > 10);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.locator("#recovery-display").evaluate((node) => {
+    node.textContent = "•".repeat(64);
+  });
+  await page.screenshot({ path: "/tmp/veriq-recovery-mobile.png", fullPage: true });
+  assert.equal(await page.evaluate(() => document.activeElement?.id), "signup-result");
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+  await page.getByRole("button", { name: "Continue" }).click();
   await page.waitForURL("**/app.html");
-  await page
-    .getByRole("button", { name: "Set up sample demo", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Workspace settings", exact: true }).click();
+  await page.getByLabel("Password to enroll authenticator").fill("pilot-test-password");
+  await page.getByRole("button", { name: "Start MFA enrollment" }).click();
+  await page.locator("#mfa-secret").waitFor();
+  const totpSeed = (await page.locator("#mfa-secret").innerText()).split(": ").at(-1);
+  assert.ok(totpSeed.length >= 16);
+  await page.getByLabel("Password to confirm enrollment").fill("pilot-test-password");
+  await page.getByLabel("Authenticator code").first().fill(totp(totpSeed));
+  await page.locator("#mfa-secret").evaluate((node) => {
+    node.textContent = "Authenticator secret: " + "•".repeat(64);
+  });
+  await page.getByRole("button", { name: "Confirm MFA" }).click();
+  await page.getByRole("button", { name: "Log out" }).click();
+  await page.waitForURL(`${origin}/`);
+  await page.goto(`${origin}/login.html`);
+  await page.getByLabel("Email").fill("browser@example.test");
+  await page.getByLabel("Password").fill("pilot-test-password");
+  await page.getByLabel("Authenticator code (if enabled)").fill(
+    totp(totpSeed, Math.floor(Date.now() / 30000) + 1),
+  );
+  await page.getByRole("button", { name: "Log in", exact: true }).click();
+  await page.waitForURL("**/app.html");
+  await page.getByRole("button", { name: "Set up sample demo", exact: true }).click();
   await page
     .getByText(
       "Sample policy ready. These examples use the actual review engine.",
@@ -176,11 +236,6 @@ try {
   await page
     .getByRole("button", { name: "AI support chat", exact: true })
     .click();
-  await page
-    .getByLabel(
-      "Chat policy [Sample] Export and refund policy, version demo-v1",
-    )
-    .check();
   await page.getByLabel("Support question").fill("What is the refund window?");
   const chatRetryKeys = [];
   const dropChatResponse = async (route) => {
@@ -190,7 +245,16 @@ try {
       const response = await route.fetch();
       assert.equal(response.status(), 201);
       await route.abort("failed");
-    } else await route.continue();
+    } else if (chatRetryKeys.length === 2)
+      await route.fulfill({
+        status: 409,
+        contentType: "application/json",
+        body: JSON.stringify({
+          error: "Chat is in progress.",
+          code: "CHAT_IN_PROGRESS",
+        }),
+      });
+    else await route.continue();
   };
   await page.route("**/api/chat", dropChatResponse);
   await page
@@ -209,15 +273,20 @@ try {
   await page
     .getByRole("button", { name: "Generate and check answer", exact: true })
     .click();
+  await page.getByText("Chat is in progress.").waitFor();
+  await page
+    .getByRole("button", { name: "Generate and check answer", exact: true })
+    .click();
   await page
     .getByText(
       "Draft saved with a claim review. A person still decides whether to send.",
     )
     .waitFor();
   await page.unroute("**/api/chat", dropChatResponse);
-  assert.equal(chatRetryKeys.length, 2);
+  assert.equal(chatRetryKeys.length, 3);
   assert.ok(chatRetryKeys[0]);
   assert.equal(chatRetryKeys[0], chatRetryKeys[1]);
+  assert.equal(chatRetryKeys[1], chatRetryKeys[2]);
   assert.equal(
     f.sqlite.prepare("SELECT COUNT(*) AS n FROM chat_turns").get().n,
     1,
@@ -394,15 +463,12 @@ try {
   await page.getByRole("button", { name: "Load example" }).click();
   await page.getByRole("button", { name: "Save draft document" }).click();
   await page.getByRole("button", { name: "Approve this version" }).click();
-  await page
-    .getByText("Document approved. Select it in Review sources.")
-    .waitFor();
   await page.getByRole("button", { name: "Review desk" }).click();
   await page
-    .getByLabel("Use [Sample] Export and refund policy, version demo-v1")
-    .uncheck();
-  await page.getByLabel("Use Example export policy, version pilot-1").check();
-  await page.getByRole("button", { name: "Review draft" }).click();
+    .getByText("Approved · active and included")
+    .first()
+    .waitFor();
+  await page.getByRole("button", { name: "Review draft", exact: true }).click();
   await page.locator("#results .requires_changes").waitFor();
   assert.equal(await page.locator("#results .receipt").count(), 2);
   assert.equal(await page.locator("#results .contradicted").count(), 1);
@@ -461,14 +527,14 @@ try {
   assert.equal(await page.evaluate(() => window.hacked), undefined);
   // Team workspaces require a different administrator to approve a policy.
   await page.getByRole("button", { name: "+ New team", exact: true }).click();
-  await page.getByLabel("Workspace name").fill("Enterprise support");
-  await page.getByRole("button", { name: "Create workspace" }).click();
-  await page.getByText("Two-person policy approval", { exact: true }).waitFor();
+  await page.getByLabel("Workspace name", { exact: true }).fill("Enterprise support");
   await page.getByRole("button", { name: "Team & access" }).click();
-  await page.getByLabel("Member email").fill("bob@example.test");
+  await page.getByLabel("Recipient account ID").fill(f.bob);
+  await page.getByLabel("Recipient label").fill("Bob fixture account");
   await page.getByLabel("Role", { exact: true }).selectOption("admin");
-  await page.getByRole("button", { name: "Add member", exact: true }).click();
-  await page.getByText("bob@example.test", { exact: true }).waitFor();
+  await page.getByRole("button", { name: "Create invitation", exact: true }).click();
+  const invitationToken = (await page.locator("#invitation-token").innerText()).split(": ").at(-1);
+  assert.ok(invitationToken.length > 10);
   await page.getByRole("button", { name: "Documents", exact: true }).click();
   await page.getByLabel("Document title").fill("Team refunds");
   await page.getByLabel("Version", { exact: true }).fill("v1");
@@ -483,7 +549,7 @@ try {
   );
   const bobContext = await browser.newContext();
   await bobContext.addCookies([
-    { name: "veriq_session", value: f.bobToken, url: origin },
+    { name: "__Host-veriq_session", value: f.bobToken, url: origin },
   ]);
   const bobPage = await bobContext.newPage();
   bobPage.setDefaultTimeout(10000);
@@ -499,10 +565,10 @@ try {
   await bobPage.getByRole("button", { name: "Documents", exact: true }).click();
   await bobPage.getByRole("button", { name: "Approve this version" }).click();
   await bobPage
-    .getByText("Document approved. Select it in Review sources.")
+    .getByText("Approved · active and included")
+    .first()
     .waitFor();
-  await bobPage.getByRole("button", { name: "Review desk" }).click();
-  await bobPage.getByLabel("Use Team refunds, version v1").check();
+  await bobPage.getByRole("button", { name: "Review desk", exact: true }).click();
   await bobPage
     .getByLabel("Reply to review")
     .fill("Refund requests must be submitted within 30 days of purchase.");

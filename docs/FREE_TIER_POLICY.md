@@ -1,31 +1,73 @@
 # Free-only deployment policy
 
-Veriq must use free services with hard provider limits. Do not enable paid plans, automatic overages, paid fallbacks, trials that convert to paid subscriptions, prepaid AI credits or new billable resources. Keep the existing Cloudflare account and project; do not create a replacement tenant or URL to work around account access.
+Veriq must use free services with hard provider limits. Do not enable paid plans,
+automatic overages, paid fallbacks, trials that convert to paid subscriptions,
+prepaid AI credits or new billable resources. Keep the existing Cloudflare
+account and project; do not create a replacement tenant or URL. The repository
+does not verify the account's plan itself; an owner must verify it before any
+hosted AI release.
 
 ## Allowed production services
 
-| Service                    | Requirement and behavior at the limit                                                                                                                                                                                                                                                         |
-| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Cloudflare Pages / Workers | Verify the current Workers plan is **Free** in the existing account before publishing. Free limits may stop service; do not upgrade to restore capacity.                                                                                                                                      |
-| Workers AI                 | Retain the direct `@cf/openai/gpt-oss-20b` binding. Workers Free includes 10,000 neurons/account/day and fails further requests at the limit, resetting at 00:00 UTC. Workers Paid can charge for excess use, so it is excluded. No AI Gateway credits or other paid model/provider fallback. |
-| D1                         | Use the Free plan with provider-enforced read/write/storage limits. Queries or inserts may fail when the applicable limits are reached. Account limits are shared with other apps.                                                                                                            |
-| KV                         | Not required by current authentication; if retained, use only the Free plan and its hard daily limits.                                                                                                                                                                                        |
-| R2                         | **Excluded from production.** Its free storage/operation allowance permits billable overages. The app's per-workspace size and upload limits do not cap account-wide operations or charges.                                                                                                   |
+| Service | Requirement and behavior at the limit |
+| --- | --- |
+| Cloudflare Pages / Workers | Verify the existing account is on Workers Free before publishing. Limits may stop service; never upgrade to restore capacity. |
+| Workers AI | Retain the direct `@cf/openai/gpt-oss-20b` binding. Provider free allocation can stop requests at its account-wide limit; no paid fallback, AI Gateway credits or alternate provider is allowed. |
+| D1 | Use the existing Free-plan database and accept provider-enforced read/write/storage limits. Account limits may be shared with other applications. |
+| MFA encryption secret | `MFA_ENCRYPTION_KEY` is a zero-cost Worker secret: an operator provisions a base64 encoding of 32 random bytes, keeps an encrypted backup and plans deliberate rotation. Missing or changed key material fails closed; never commit or print the value. |
+| R2 | **Excluded from production.** Its allowance permits billable overages. Use simulated local storage only. |
 
-Sources checked October 8, 2026: [Workers pricing](https://developers.cloudflare.com/workers/platform/pricing/), [Workers AI pricing](https://developers.cloudflare.com/workers-ai/platform/pricing/), [D1 pricing](https://developers.cloudflare.com/d1/platform/pricing/), [R2 pricing](https://developers.cloudflare.com/r2/pricing/).
+Sources checked October 9, 2026: [Workers pricing](https://developers.cloudflare.com/workers/platform/pricing/),
+[Workers AI pricing](https://developers.cloudflare.com/workers-ai/platform/pricing/),
+[D1 pricing](https://developers.cloudflare.com/d1/platform/pricing/), and
+[R2 pricing](https://developers.cloudflare.com/r2/pricing/).
 
 ## What the code enforces
 
-`WORKERS_FREE_PLAN_CONFIRMED` defaults to `"false"`. New AI reviews and chat generation return `503 FREE_PLAN_UNCONFIRMED` before any model call or generation quota reservation unless it is exactly `"true"`. Authenticated policy/bookmark operations, saved history and human decisions remain available. The UI disables generation and explains the pause.
+`WORKERS_FREE_PLAN_CONFIRMED` defaults to `"false"`. New AI reviews and chat
+generation return `503 FREE_PLAN_UNCONFIRMED` before any model call or generation
+quota reservation unless it is exactly `"true"`. Authenticated policy/bookmark
+operations, saved history and human decisions remain available. The UI disables
+generation and explains the pause.
 
-An operator may set this variable to `"true"` **only after verifying the existing account's current Workers Free plan and direct AI binding**. It is an attestation, not a billing API integration. The Worker cannot detect account upgrades, inspect shared account usage or guarantee that other apps incur no charges. Recheck the account plan for each deployment; reset the flag immediately if the plan changes. Do not enable AI on a paid account simply because estimated usage is small.
+The app also reports shared application ceilings through `/api/usage.sharedAi`:
+50 calls/day, 1,000,000 UTF-8 input bytes/day and 100,000 requested output
+tokens/day, with used/remaining values and reset time. Requested output tokens
+are a conservative reservation ceiling, not a measurement of model tokens.
+Failed and timed-out attempts remain counted. These limits are separate from
+per-account review/chat allowances and from the provider's free allocation;
+none guarantees that AI is available.
 
-Production ignores any `MEDIA` binding, even if added accidentally. Media operations require `LOCAL_MEDIA_DEMO="true"` and an HTTP loopback request (localhost, 127.0.0.1 or ::1). This preserves emulator demonstrations without enabling remote media operations. Local configuration must use simulated R2, never a remote binding. See [local media setup](EVIDENCE_CHAT.md).
+An operator may set `WORKERS_FREE_PLAN_CONFIRMED=true` only after verifying the
+existing account's current Workers Free plan and direct AI binding. This is an
+attestation, not billing detection. The Worker cannot inspect account upgrades,
+shared provider usage or other applications. Recheck the plan and secret
+metadata for each deployment; reset the flag if the plan or key changes. Do not
+claim that the account is verified from application health alone.
 
-`GET /api/health` reports version 8, `billingMode:free_only`, `aiAvailable` and `mediaAvailable`. These describe application configuration; they are not proof of the account's actual subscription. The company-demo release check requires enabled AI and disabled production media, then still requires a signed-in live-AI workflow and dashboard billing verification.
+Production ignores any `MEDIA` binding, even if added accidentally. Media
+operations require `LOCAL_MEDIA_DEMO="true"` and an HTTP loopback request
+(localhost, 127.0.0.1 or ::1). Local configuration must use simulated storage,
+never a remote binding. See [local media setup](EVIDENCE_CHAT.md).
+
+`GET /api/health` reports coordinated version 9, `billingMode:free_only`,
+`aiAvailable`, `mfaAvailable`, `mediaAvailable`, and capabilities including
+`free_tier_policy`, `shared_ai_capacity`, `full_policy_scope`, `totp_mfa`,
+`invitation_admission`, `offline_recovery`, and `workspace_lifecycle`. These
+describe application configuration, not proof of account subscription,
+provider capacity, model quality or continuous availability. The release check
+still requires operator plan/secret verification and a signed-in smoke.
 
 ## Pilot scope under this constraint
 
-The hosted pilot can check drafts, generate checked AI chat replies, store approved policy versions and bookmarks, attach approved links, record human decisions and collect feedback. Media upload/download is a local demonstration only. Hosted media needs a different storage service with a verified hard zero-cost cap before it can be added. Do not advertise hosted file storage as working.
+The hosted pilot can check drafts against the full active bounded workspace
+policy set, generate checked AI chat replies, store approved policy versions and
+bookmarks, attach approved links, record human decisions and collect feedback.
+Media upload/download is a local demonstration only. Do not advertise hosted
+file storage or promise always-on AI.
 
-Hitting a free limit is an availability failure, not permission to spend. App request quotas control abuse; they do not translate into an exact neuron budget. A long policy set or several claims may exhaust the free daily allocation before the app's per-user quota. Do not report unsupported machine findings as supported when model evaluation fails.
+Hitting a free limit is an availability failure, not permission to spend. App
+quotas and shared ceilings control abuse; they do not translate into an exact
+provider budget. A long policy set or several claims may exhaust provider
+capacity earlier. Do not report unsupported machine findings as supported when
+model evaluation fails.

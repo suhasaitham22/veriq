@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import api from "../apps/api/src/index.ts";
-import { fixture, fakeAI } from "./helpers.ts";
+import { fixture, fakeAI, admit } from "./helpers.ts";
 type Fixture = Awaited<ReturnType<typeof fixture>>;
 async function request(
   f: Fixture,
@@ -14,7 +14,7 @@ async function request(
     new Request(`http://localhost:8787${path}`, {
       method: body === undefined ? "GET" : "POST",
       headers: {
-        cookie: `veriq_session=${token}`,
+        cookie: `__Host-veriq_session=${token}`,
         ...(body === undefined ? {} : { "content-type": "application/json" }),
         ...(ws ? { "x-workspace-id": ws } : {}),
       },
@@ -31,21 +31,12 @@ const feedback = {
 test("sample setup requires explicit confirmation, is idempotent and uses the real review pipeline", async () => {
   let calls = 0;
   const f = await fixture({
-    async run() {
+    async run(model, input) {
       calls++;
-      return {
-        response: JSON.stringify({
-          notApplicable: false,
-          evidence: [
-            {
-              passageId: "d0p0",
-              stance: "supports",
-              quote:
-                "Refund requests must be submitted within 30 days of purchase.",
-            },
-          ],
-        }),
-      };
+      return fakeAI({
+        notApplicable: false,
+        evidence: [{ source: "d0", stance: "supports", quote: "Refund requests must be submitted within 30 days of purchase." }],
+      }).run(model, input);
     },
   });
   try {
@@ -207,10 +198,7 @@ test("viewers can leave feedback; only administrators can list or export it", as
         await request(f, "/api/workspaces", { name: "Company pilot" })
       ).json()
     ).id;
-    await request(f, `/api/workspaces/${ws}/members`, {
-      email: "bob@example.test",
-      role: "viewer",
-    });
+    await admit(f.env, ws, f.aliceToken, f.bobToken, "viewer");
     assert.equal(
       (await request(f, "/api/feedback", feedback, f.bobToken, ws)).status,
       201,

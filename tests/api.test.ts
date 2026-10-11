@@ -15,7 +15,7 @@ async function request(
     new Request(`http://localhost:8787${path}`, {
       method: body === undefined ? "GET" : "POST",
       headers: {
-        ...(token ? { cookie: `veriq_session=${token}` } : {}),
+        ...(token ? { cookie: `__Host-veriq_session=${token}` } : {}),
         ...(body === undefined ? {} : { "content-type": "application/json" }),
         ...extra,
       },
@@ -46,14 +46,14 @@ test("full document draft → approve → review → private history flow uses r
     draft: text,
     documentIds: [id],
   });
-  assert.equal(response.status, 400);
+  assert.equal(response.status, 409);
   assert.equal(
     (await request(f, `/api/documents/${id}/approve`, f.aliceToken, {})).status,
     200,
   );
   f.env.AI = fakeAI({
     notApplicable: false,
-    evidence: [{ passageId: "d0p0", stance: "supports", quote: text }],
+    evidence: [{ source: "d0", stance: "supports", quote: text }],
   });
   response = await request(f, "/api/reviews", f.aliceToken, {
     draft: text,
@@ -105,7 +105,7 @@ test("account isolation blocks document listing, approval, archival, and review 
         documentIds: [id],
       })
     ).status,
-    400,
+    409,
   );
   assert.equal(
     f.sqlite.prepare("SELECT COUNT(*) AS n FROM support_reviews").get()!.n,
@@ -117,7 +117,7 @@ test("archiving excludes future reviews, preserves historical quotes, and disall
   const f = await fixture(
     fakeAI({
       notApplicable: false,
-      evidence: [{ passageId: "d0p0", stance: "supports", quote: text }],
+      evidence: [{ source: "d0", stance: "supports", quote: text }],
     }),
   );
   const id = await add(f);
@@ -136,7 +136,7 @@ test("archiving excludes future reviews, preserves historical quotes, and disall
         documentIds: [id],
       })
     ).status,
-    400,
+    409,
   );
   assert.equal(
     (await request(f, `/api/documents/${id}/approve`, f.aliceToken, {})).status,
@@ -173,15 +173,13 @@ test("approval changing while a model is running invalidates the review", async 
   const id = await add(f);
   await request(f, `/api/documents/${id}/approve`, f.aliceToken, {});
   f.env.AI = {
-    async run() {
+    async run(model, input) {
       f.sqlite
         .prepare(
           "UPDATE support_documents SET status = 'archived' WHERE id = ?",
         )
         .run(id);
-      return {
-        response: JSON.stringify({ notApplicable: false, evidence: [] }),
-      };
+      return fakeAI().run(model, input);
     },
   };
   assert.equal(
@@ -222,18 +220,14 @@ test("invalid draft and document IDs do not consume review quota or invoke AI", 
   });
   const id = await add(f);
   await request(f, `/api/documents/${id}/approve`, f.aliceToken, {});
-  for (const body of [
-    { draft: " ", documentIds: [id] },
-    { draft: 42, documentIds: [id] },
-    { draft: text, documentIds: [id, id] },
-    { draft: text, documentIds: ["' OR 1=1 --"] },
-    { draft: text },
-    { draft: "Policy. ".repeat(13), documentIds: [id] },
-  ]) {
-    assert.equal(
-      (await request(f, "/api/reviews", f.aliceToken, body)).status,
-      400,
-    );
+  for (const [body, status] of [
+    [{ draft: " ", documentIds: [id] }, 400],
+    [{ draft: 42, documentIds: [id] }, 400],
+    [{ draft: text, documentIds: [id, id] }, 409],
+    [{ draft: text, documentIds: ["' OR 1=1 --"] }, 409],
+    [{ draft: "Policy. ".repeat(13), documentIds: [id] }, 400],
+  ] as const) {
+    assert.equal((await request(f, "/api/reviews", f.aliceToken, body)).status, status);
   }
   assert.equal(calls, 0);
   assert.equal(f.sqlite.prepare("SELECT COUNT(*) AS n FROM usage").get()!.n, 0);
@@ -323,7 +317,7 @@ test("malformed, oversized, or non-object JSON is a validation error", async () 
       new Request("http://localhost:8787/api/documents", {
         method: "POST",
         headers: {
-          cookie: `veriq_session=${f.aliceToken}`,
+          cookie: `__Host-veriq_session=${f.aliceToken}`,
           "content-type": "application/json",
         },
         body,

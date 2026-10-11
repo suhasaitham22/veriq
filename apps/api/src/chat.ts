@@ -11,10 +11,19 @@ import {
 import { DAILY_LIMITS } from "./usage.ts";
 import { requireRole, WRITERS, membershipGuard, mutate } from "./workspaces.ts";
 import type { Scope } from "./workspaces.ts";
-import { ACTIVE } from "./documents.ts";
-import type { DocumentRow } from "./documents.ts";
-import { sha256, modelText, withTimeout, splitStatements } from "./pipeline.ts";
+import {
+  capacitySignal,
+  modelText,
+  sha256,
+  splitStatements,
+  withTimeout,
+} from "./pipeline.ts";
 import type { AIClient } from "./pipeline.ts";
+import {
+  activePolicies,
+  requireCompleteScope,
+  scopeFence,
+} from "./policy-scope.ts";
 import { reviewRoutes } from "./reviews.ts";
 interface Turn {
   id: string;
@@ -25,6 +34,7 @@ interface Turn {
   state: string;
   request_hash: string;
   lease: string;
+  document_ids_json: string;
   created_at: string;
 }
 const projection = "id,question,answer,review_id,parent_id,state,created_at";
@@ -74,19 +84,12 @@ export async function chatRoutes(
     key = req.headers.get("idempotency-key");
   if (!key || !/^[a-zA-Z0-9_-]{16,128}$/.test(key))
     throw new HttpError(400, "A 16–128 character idempotency key is required.");
-  if (
-    !Array.isArray(body.documentIds) ||
-    !body.documentIds.length ||
-    body.documentIds.length > 10 ||
-    !body.documentIds.every(uuid) ||
-    new Set(body.documentIds).size !== body.documentIds.length
-  )
-    throw new HttpError(400, "Select 1–10 distinct approved policies.");
-  const ids = [...(body.documentIds as string[])].sort(),
-    parent = body.parentId ?? null;
+  const parent = body.parentId ?? null;
   if (parent !== null && !uuid(parent))
     throw new HttpError(400, "Invalid previous chat turn.");
-  const hash = await sha256(JSON.stringify({ question, ids, parent }));
+  // The retry identity is the message, so a completed key replays its own turn
+  // even after the active policy set moved on.
+  const hash = await sha256(JSON.stringify({ question, parent }));
   let turn = await db
     .prepare(
       "SELECT * FROM chat_turns WHERE workspace_id=? AND user_id=? AND request_key=?",
@@ -109,6 +112,10 @@ export async function chatRoutes(
         .first(),
       replayed: true,
     };
+  // Answers are drafted from, and checked against, every active approved policy.
+  const policies = await activePolicies(db, workspace.id);
+  requireCompleteScope(body.documentIds, policies);
+  const ids = policies.scope.documentIds;
   const history: { question: string; answer: string }[] = [];
   let previous = parent;
   for (let i = 0; previous && i < 6; i++) {
@@ -126,23 +133,6 @@ export async function chatRoutes(
     history.unshift({ question: row.question, answer: row.answer! });
     previous = row.parent_id;
   }
-  const marks = ids.map(() => "?").join(",");
-  const docs = (
-    await db
-      .prepare(
-        `SELECT * FROM support_documents WHERE workspace_id=? AND ${ACTIVE} AND id IN (${marks}) ORDER BY id`,
-      )
-      .bind(workspace.id, ...ids)
-      .all<DocumentRow>()
-  ).results;
-  if (docs.length !== ids.length)
-    throw new HttpError(
-      409,
-      "Selected policies are not currently approved and active.",
-      "CHAT_POLICY_STALE",
-    );
-  if (docs.reduce((sum, d) => sum + d.content.length, 0) > 60000)
-    throw new HttpError(400, "Selected policies exceed 60,000 characters.");
   const now = Math.floor(Date.now() / 1000),
     lease = crypto.randomUUID(),
     id = turn?.id ?? crypto.randomUUID();
@@ -178,7 +168,17 @@ export async function chatRoutes(
       "CHAT_IN_PROGRESS",
     );
   turn = claim;
+  // A policy approved, archived or expired mid-flight invalidates the saves below.
+  const fence = scopeFence(workspace.id, policies.scope);
   try {
+    // A turn's recorded policy set is immutable, so a resumed turn whose set has
+    // moved on would misstate its own coverage. Start a new one instead.
+    if (turn.document_ids_json !== JSON.stringify(ids))
+      throw new HttpError(
+        409,
+        "The workspace's active approved policies changed since this message was first sent. Send it again with a new request key.",
+        "CHAT_POLICY_STALE",
+      );
     let answer = turn.answer;
     if (!answer) {
       if (!(await rateLimit(db, `chat:${user.id}`, DAILY_LIMITS.chat, 86400)))
@@ -202,7 +202,7 @@ export async function chatRoutes(
                 content: JSON.stringify({
                   question,
                   history,
-                  documents: docs.map((d) => ({
+                  documents: policies.documents.map((d) => ({
                     id: d.id,
                     title: d.title,
                     version: d.version,
@@ -220,7 +220,9 @@ export async function chatRoutes(
         const parsed = JSON.parse(modelText(output));
         answer = string(parsed.answer, "AI draft", 3000);
         splitStatements(answer);
-      } catch {
+      } catch (error) {
+        // A capacity or quota refusal is not an invalid draft; keep its code.
+        if (capacitySignal(error)) throw error;
         throw new HttpError(
           502,
           "The AI did not produce a complete valid draft. Retry this message.",
@@ -229,23 +231,14 @@ export async function chatRoutes(
       }
       const saved = await db
         .prepare(
-          `UPDATE chat_turns SET answer=? WHERE id=? AND lease=? AND state='running' AND ${membershipGuard()} AND (SELECT COUNT(*) FROM support_documents WHERE workspace_id=? AND ${ACTIVE} AND id IN (${marks}))=?`,
+          `UPDATE chat_turns SET answer=? WHERE id=? AND lease=? AND state='running' AND ${membershipGuard()} AND ${fence.sql}`,
         )
-        .bind(
-          answer,
-          id,
-          lease,
-          workspace.id,
-          user.id,
-          workspace.id,
-          ...ids,
-          ids.length,
-        )
+        .bind(answer, id, lease, workspace.id, user.id, ...fence.params)
         .run();
       if (saved.meta.changes !== 1)
         throw new HttpError(
           409,
-          "Policies, permissions or request ownership changed. Refresh before retrying.",
+          "Active policies, permissions or request ownership changed. Refresh before retrying.",
           "CHAT_STALE",
         );
     }
@@ -269,18 +262,9 @@ export async function chatRoutes(
         scope,
         db
           .prepare(
-            `UPDATE chat_turns SET state='completed',review_id=? WHERE id=? AND lease=? AND state='running' AND ${membershipGuard()} AND (SELECT COUNT(*) FROM support_documents WHERE workspace_id=? AND ${ACTIVE} AND id IN (${marks}))=?`,
+            `UPDATE chat_turns SET state='completed',review_id=? WHERE id=? AND lease=? AND state='running' AND ${membershipGuard()} AND ${fence.sql}`,
           )
-          .bind(
-            result.id,
-            id,
-            lease,
-            workspace.id,
-            user.id,
-            workspace.id,
-            ...ids,
-            ids.length,
-          ),
+          .bind(result.id, id, lease, workspace.id, user.id, ...fence.params),
         "chat.completed",
         id,
         { reviewId: result.id, documentIds: ids },
@@ -288,7 +272,7 @@ export async function chatRoutes(
     )
       throw new HttpError(
         409,
-        "Policies or permissions changed. Refresh before retrying.",
+        "Active policies or permissions changed. Refresh before retrying.",
         "CHAT_STALE",
       );
     return {

@@ -27,7 +27,7 @@ export async function verifyDeployment(baseUrl, fetcher = fetch) {
   if (
     health.service !== "veriq-api" ||
     health.mode !== "support_review" ||
-    health.v < 8 ||
+    health.v < 9 ||
     ![
       "workspaces",
       "pilot_feedback",
@@ -36,18 +36,25 @@ export async function verifyDeployment(baseUrl, fetcher = fetch) {
       "ai_chat",
       "free_tier_policy",
       "usage_status",
+      "invitation_admission",
+      "offline_recovery",
+      "workspace_lifecycle",
+      "full_policy_scope",
+      "shared_ai_capacity",
+      "totp_mfa",
     ].every((f) => health.features?.includes(f))
   )
     throw new Error(
-      "The API is an older release. Deploy the support-review API and web app together.",
+      "The API is not the coordinated v9 release. Deploy the matching support-review API and web app together.",
     );
   if (
     health.billingMode !== "free_only" ||
     health.aiAvailable !== true ||
+    health.mfaAvailable !== true ||
     health.mediaAvailable !== false
   )
     throw new Error(
-      "Free-only demo is not ready: verify the Workers Free plan and enable AI, keeping production media disabled. Health reflects operator configuration; verify billing in Cloudflare separately.",
+      "Free-only demo is not ready: verify the Workers Free plan, encrypted MFA key, AI and disabled production media. Health reflects operator configuration; verify billing and secret metadata separately.",
     );
   const auth = await get("/api/auth/me");
   if (

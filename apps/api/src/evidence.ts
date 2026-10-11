@@ -345,7 +345,7 @@ export async function evidenceRoutes(
     if (
       !(await db
         .prepare(
-          "SELECT 1 FROM workspace_members WHERE workspace_id=? AND user_id=?",
+          "SELECT 1 FROM workspace_members m JOIN workspaces w ON w.id=m.workspace_id WHERE m.workspace_id=? AND m.user_id=? AND m.admitted_at IS NOT NULL AND w.deleting=0",
         )
         .bind(workspace.id, user.id)
         .first())

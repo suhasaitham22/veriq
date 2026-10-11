@@ -17,7 +17,7 @@ function request(
     new Request(`http://localhost:8787${path}`, {
       method: body === undefined ? "GET" : "POST",
       headers: {
-        cookie: `veriq_session=${token}`,
+        cookie: `__Host-veriq_session=${token}`,
         ...(body === undefined ? {} : { "content-type": "application/json" }),
         ...(workspace ? { "x-workspace-id": workspace } : {}),
         ...(key ? { "idempotency-key": key } : {}),
